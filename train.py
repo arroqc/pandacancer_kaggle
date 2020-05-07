@@ -14,8 +14,10 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import cohen_kappa_score
 import pytorch_lightning as pl
 from contribs.ranger import Ranger
+from contribs.over9000 import Over9000
 from contribs.mish import Mish
 from utils import dict_to_args
+import math
 
 
 class TileDataset(tdata.Dataset):
@@ -39,16 +41,23 @@ class TileDataset(tdata.Dataset):
         tiles = self.img_path.glob('**/' + img_id + '*.png')
         metadata = self.df.iloc[idx]
         image_tiles = []
-        for tile in tiles:
-            image = Image.open(tile)
+        try:
+            for tile in tiles:
+                image = Image.open(tile)
 
-            if self.transform is not None:
-                image = self.transform(image)
+                if self.transform is not None:
+                    image = self.transform(image)
 
-            if self.normalize_stats is not None:
-                provider = metadata['data_provider']
-                image = self.normalize_stats[provider](image)
+                if self.normalize_stats is not None:
+                    image = 1 - image
+                    image = transforms.Normalize([1.0-0.90949707, 1.0-0.8188697, 1.0-0.87795304],
+                                                 [0.36357649, 0.49984502, 0.40477625])(image)
+                    # provider = metadata['data_provider']
+                    # image = self.normalize_stats[provider](image)
                 image_tiles.append(image)
+        except:
+            print('ISSUE')
+            return self.__getitem__(0)
 
         image_tiles = torch.stack(image_tiles, dim=0)
 
@@ -78,10 +87,13 @@ class Flatten(nn.Module):
 
 class Model(nn.Module):
 
-    def __init__(self, c_feature=2048, c_out=6, pretrained=True, **kwargs):
+    def __init__(self, c_out=6, pretrained=True, **kwargs):
         super().__init__()
-        self.feature_extractor = nn.Sequential(*list(models.resnet50(pretrained=pretrained).children())[:-2])
-        print(c_out, c_feature)
+        m = torch.hub.load('facebookresearch/semi-supervised-ImageNet1K-models', 'resnext50_32x4d_ssl')
+        # m = models.resnet50(pretrained=pretrained)
+        c_feature = list(m.children())[-1].in_features
+        self.feature_extractor = nn.Sequential(*list(m.children())[:-2])
+
         self.head = nn.Sequential(AdaptiveConcatPool2d(),
                                   Flatten(),
                                   nn.Linear(c_feature * 2, 512),
@@ -99,6 +111,29 @@ class Model(nn.Module):
         return h
 
 
+class FlatCosineAnnealingLR(torch.optim.lr_scheduler._LRScheduler):
+
+    def __init__(self, optimizer, max_iter, step_size=0.7, last_epoch=-1):
+        self.flat_range = int(max_iter * step_size)
+        self.T_max = max_iter - self.flat_range
+        self.eta_min = 0
+        super(FlatCosineAnnealingLR, self).__init__(optimizer, last_epoch)
+
+    def get_lr(self):
+        if self.last_epoch < self.flat_range:
+            return [base_lr for base_lr in self.base_lrs]
+        else:
+            print('Changing lr')
+            cr_epoch = self.last_epoch - self.flat_range
+            return [
+                self.eta_min
+                + (base_lr - self.eta_min)
+                * (1 + math.cos(math.pi * (cr_epoch / self.T_max)))
+                / 2
+                for base_lr in self.base_lrs
+            ]
+
+
 class LightModel(pl.LightningModule):
 
     def __init__(self, train_idx, val_idx, provider_stats, hparams):
@@ -106,8 +141,7 @@ class LightModel(pl.LightningModule):
         self.train_idx = train_idx
         self.val_idx = val_idx
 
-        self.model = Model(c_feature=2048,
-                           c_out=6,
+        self.model = Model(c_out=6,
                            pretrained=hparams.pretrained)
         self.provider_stats = provider_stats
         self.hparams = hparams
@@ -126,11 +160,11 @@ class LightModel(pl.LightningModule):
                                   normalize_stats=self.provider_stats)
 
     def train_dataloader(self):
-        train_dl = tdata.DataLoader(self.trainset, batch_size=BATCH_SIZE, shuffle=True, num_workers=8)
+        train_dl = tdata.DataLoader(self.trainset, batch_size=BATCH_SIZE, shuffle=True, num_workers=os.cpu_count())
         return train_dl
 
     def val_dataloader(self):
-        val_dl = tdata.DataLoader(self.valset, batch_size=BATCH_SIZE, shuffle=False, num_workers=8)
+        val_dl = tdata.DataLoader(self.valset, batch_size=BATCH_SIZE, shuffle=False, num_workers=os.cpu_count())
         return [val_dl]
 
     def cross_entropy_loss(self, logits, gt):
@@ -138,8 +172,9 @@ class LightModel(pl.LightningModule):
         return loss_fn(logits, gt)
 
     def configure_optimizers(self):
-        optimizer = Ranger(self.model.parameters(), lr=self.hparams.lr)
-        return optimizer
+        optimizer = Over9000(self.model.parameters(), lr=self.hparams.lr)
+        scheduler = FlatCosineAnnealingLR(optimizer, max_iter=EPOCHS)
+        return [optimizer], [scheduler]
 
     def training_step(self, batch, batch_idx):
         logits = self(batch)
@@ -169,6 +204,7 @@ if __name__ == '__main__':
     CSV_PATH = 'G:/Datasets/panda/train.csv'
     SEED = 34
     BATCH_SIZE = 8
+    EPOCHS = 20
     random.seed(SEED)
     os.environ['PYTHONHASHSEED'] = str(SEED)
     np.random.seed(SEED)
@@ -185,10 +221,10 @@ if __name__ == '__main__':
     with open('./stats.pkl', 'rb') as file:
         provider_stats = pickle.load(file)
 
-    hparams = {'lr': 5e-4,
+    hparams = {'lr': 2e-3,
                'pretrained': True}
     model = LightModel(train_idx, val_idx, provider_stats, dict_to_args(hparams))
-    trainer = pl.Trainer(gpus=[0], max_nb_epochs=10, auto_lr_find=False)
+    trainer = pl.Trainer(gpus=[0], max_nb_epochs=EPOCHS, auto_lr_find=False)
     # lr_finder = trainer.lr_find(model)
     # fig = lr_finder.plot(suggest=True)
     # fig.savefig('lr_plot.png')

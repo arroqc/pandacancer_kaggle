@@ -8,7 +8,6 @@ from albumentations import (
 
 
 class AlbumentationTransform:
-
     def __init__(self, p=0.5):
         self.strong_aug = strong_aug(p)
 
@@ -18,30 +17,10 @@ class AlbumentationTransform:
 
 
 def strong_aug(p=.5):
-    return Compose([
+    return OneOf([
         RandomRotate90(),
         Flip(),
-        Transpose(),
-        OneOf([
-            IAAAdditiveGaussianNoise(),
-            GaussNoise(),
-        ], p=0.2),
-        OneOf([
-            MotionBlur(p=.2),
-            MedianBlur(blur_limit=3, p=0.1),
-            Blur(blur_limit=3, p=0.1),
-        ], p=0.2),
-        ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.2, rotate_limit=45, p=0.2),
-        OneOf([
-            OpticalDistortion(p=0.3),
-            GridDistortion(p=.1),
-            IAAPiecewiseAffine(p=0.3),
-        ], p=0.2),
-        OneOf([
-            CLAHE(clip_limit=2),
-            IAASharpen(),
-            IAAEmboss(),
-            RandomBrightnessContrast(),
-        ], p=0.3),
-        HueSaturationValue(p=0.3),
+        ShiftScaleRotate(shift_limit=0, scale_limit=0.2, rotate_limit=20, p=0.6, value=255),
+        RandomBrightnessContrast(p=0.1),
+        HueSaturationValue(hue_shift_limit=10, p=0.1),
     ], p=p)
