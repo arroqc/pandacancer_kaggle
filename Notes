@@ -1,0 +1,7 @@
+Todo:
+* Add data augmentation
+* Save the tiles on ssd
+
+Potentially faster to just skimage.io the whole image and leave it at that
+especially if try to use different scales !
+
