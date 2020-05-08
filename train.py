@@ -10,6 +10,8 @@ import numpy as np
 import random
 import os
 import pickle
+from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.loggers import TensorBoardLogger
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import cohen_kappa_score
 import pytorch_lightning as pl
@@ -18,6 +20,8 @@ from contribs.over9000 import Over9000
 from contribs.mish import Mish
 from utils import dict_to_args
 import math
+import datetime
+from contribs.utils import split_weights
 
 
 class TileDataset(tdata.Dataset):
@@ -87,26 +91,28 @@ class Flatten(nn.Module):
 
 class Model(nn.Module):
 
-    def __init__(self, c_out=6, pretrained=True, **kwargs):
+    def __init__(self, c_out=6, n_tiles=12, pretrained=True, **kwargs):
         super().__init__()
         m = torch.hub.load('facebookresearch/semi-supervised-ImageNet1K-models', 'resnext50_32x4d_ssl')
         # m = models.resnet50(pretrained=pretrained)
         c_feature = list(m.children())[-1].in_features
         self.feature_extractor = nn.Sequential(*list(m.children())[:-2])
-
+        self.n_tiles = n_tiles
         self.head = nn.Sequential(AdaptiveConcatPool2d(),
                                   Flatten(),
+                                  nn.Dropout(0.5),
                                   nn.Linear(c_feature * 2, 512),
                                   Mish(),
                                   nn.BatchNorm1d(512),
-                                  nn.Dropout(0.5),
+                                  nn.Dropout(0.2),
                                   nn.Linear(512, c_out))
 
     def forward(self, x):
         h = x.view(-1, 3, 128, 128)
         h = self.feature_extractor(h)
         bn, c, height, width = h.shape
-        h = h.view(-1, 16, c, height, width).permute(0, 2, 1, 3, 4).contiguous().view(-1, c, height * 16, width)
+        h = h.view(-1, self.n_tiles, c, height, width).permute(0, 2, 1, 3, 4)\
+            .contiguous().view(-1, c, height * self.n_tiles, width)
         h = self.head(h)
         return h
 
@@ -141,8 +147,14 @@ class LightModel(pl.LightningModule):
         self.train_idx = train_idx
         self.val_idx = val_idx
 
-        self.model = Model(c_out=6,
-                           pretrained=hparams.pretrained)
+        if hparams.task == 'regression':
+            self.model = Model(c_out=1,
+                               n_tiles=hparams.n_tiles,
+                               pretrained=hparams.pretrained)
+        else:
+            self.model = Model(c_out=6,
+                               n_tiles=hparams.n_tiles,
+                               pretrained=hparams.pretrained)
         self.provider_stats = provider_stats
         self.hparams = hparams
 
@@ -168,11 +180,18 @@ class LightModel(pl.LightningModule):
         return [val_dl]
 
     def cross_entropy_loss(self, logits, gt):
-        loss_fn = nn.CrossEntropyLoss()
+        if self.hparams.task == 'regression':
+            loss_fn = nn.MSELoss()
+        else:
+            loss_fn = nn.CrossEntropyLoss()
         return loss_fn(logits, gt)
 
     def configure_optimizers(self):
-        optimizer = Over9000(self.model.parameters(), lr=self.hparams.lr)
+        if hparams.weight_decay:
+            params = split_weights(self.model)
+        else:
+            params = self.model.parameters()
+        optimizer = Over9000(params, lr=self.hparams.lr, weight_decay=1e-4)
         scheduler = FlatCosineAnnealingLR(optimizer, max_iter=EPOCHS)
         return [optimizer], [scheduler]
 
@@ -205,6 +224,8 @@ if __name__ == '__main__':
     SEED = 34
     BATCH_SIZE = 8
     EPOCHS = 20
+    NAME = 'resnext50'
+    OUTPUT_DIR = './lightning_logs'
     random.seed(SEED)
     os.environ['PYTHONHASHSEED'] = str(SEED)
     np.random.seed(SEED)
@@ -216,16 +237,28 @@ if __name__ == '__main__':
     df_train = df_train[~(df_train['image_id'].isin(['8d90013d52788c1e2f5f47ad80e65d48']))]
     kfold = StratifiedKFold(n_splits=5, random_state=SEED, shuffle=True)
     splits = kfold.split(df_train, df_train['isup_grade'])
-    train_idx, val_idx = next(splits)
-
     with open('./stats.pkl', 'rb') as file:
         provider_stats = pickle.load(file)
-
-    hparams = {'lr': 2e-3,
+    hparams = {'lr': 1e-4,
+               'n_tiles': 12,
+               'task': 'regression',
+               'weight_decay': True,
                'pretrained': True}
-    model = LightModel(train_idx, val_idx, provider_stats, dict_to_args(hparams))
-    trainer = pl.Trainer(gpus=[0], max_nb_epochs=EPOCHS, auto_lr_find=False)
-    # lr_finder = trainer.lr_find(model)
-    # fig = lr_finder.plot(suggest=True)
-    # fig.savefig('lr_plot.png')
-    trainer.fit(model)
+    date = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
+    for fold, (train_idx, val_idx) in enumerate(splits):
+
+        tb_logger = TensorBoardLogger(save_dir=OUTPUT_DIR,
+                                      name=f'{NAME}' + '-' + date,
+                                      version=f'fold_{fold+1}')
+        checkpoint_callback = ModelCheckpoint(filepath=tb_logger.log_dir + "/{epoch:02d}-{kappa:.4f}",
+                                              monitor='kappa', mode='max')
+
+        model = LightModel(train_idx, val_idx, provider_stats, dict_to_args(hparams))
+        trainer = pl.Trainer(gpus=[0], max_nb_epochs=EPOCHS, auto_lr_find=False,
+                             logger=tb_logger,
+                             checkpoint_callback=checkpoint_callback
+                             )
+        # lr_finder = trainer.lr_find(model)
+        # fig = lr_finder.plot(suggest=True)
+        # fig.savefig('lr_plot.png')
+        trainer.fit(model)
