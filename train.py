@@ -203,7 +203,10 @@ class LightModel(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         logits = self(batch)
         loss = self.cross_entropy_loss(logits, batch['isup']).unsqueeze(0)
-        preds = logits.argmax(1)
+        if self.hparams.task == 'regression':
+            preds = torch.round(logits)
+        else:
+            preds = logits.argmax(1)
         return {'val_loss': loss, 'preds': preds, 'gt': batch['isup']}
 
     def validation_end(self, outputs):
