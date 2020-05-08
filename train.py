@@ -15,6 +15,7 @@ from sklearn.metrics import cohen_kappa_score
 
 from contribs.utils import split_weights, FlatCosineAnnealingLR
 from contribs.over9000 import Over9000
+from contribs.rounder import OptimizedRounder_v2
 from datasets import TileDataset
 from modules import Model
 from utils import dict_to_args
@@ -62,12 +63,13 @@ class LightModel(pl.LightningModule):
     def cross_entropy_loss(self, logits, gt):
         if self.hparams.task == 'regression':
             loss_fn = nn.MSELoss()
+            gt = gt.unsqueeze(1).float()
         else:
             loss_fn = nn.CrossEntropyLoss()
         return loss_fn(logits, gt)
 
     def configure_optimizers(self):
-        if hparams.weight_decay:
+        if self.hparams.weight_decay:
             params = split_weights(self.model)
         else:
             params = self.model.parameters()
@@ -84,7 +86,7 @@ class LightModel(pl.LightningModule):
         logits = self(batch)
         loss = self.cross_entropy_loss(logits, batch['isup']).unsqueeze(0)
         if self.hparams.task == 'regression':
-            preds = torch.round(logits)
+            preds = logits.squeeze(1)
         else:
             preds = logits.argmax(1)
         return {'val_loss': loss, 'preds': preds, 'gt': batch['isup']}
@@ -95,6 +97,12 @@ class LightModel(pl.LightningModule):
         gt = torch.cat([out['gt'] for out in outputs], dim=0)
         preds = preds.detach().cpu().numpy()
         gt = gt.detach().cpu().numpy()
+
+        if self.hparams.task == 'regression':
+            opt = OptimizedRounder_v2(6)
+            opt.fit(preds, gt)
+            preds = opt.predict(preds)
+
         kappa = cohen_kappa_score(preds, gt, weights='quadratic')
         tensorboard_logs = {'val_loss': avg_loss, 'kappa': kappa}
 
