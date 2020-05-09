@@ -38,6 +38,9 @@ class LightModel(pl.LightningModule):
                                pretrained=hparams.pretrained)
         self.provider_stats = provider_stats
         self.hparams = hparams
+        self.opt = None
+        self.trainset = None
+        self.valset = None
 
     def forward(self, batch):
         return self.model(batch['image'])
@@ -80,7 +83,23 @@ class LightModel(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         logits = self(batch)
         loss = self.cross_entropy_loss(logits, batch['isup']).unsqueeze(0)
-        return {'loss': loss, 'log': {'train_loss': loss}}
+        if self.hparams.task == 'regression':
+            preds = logits.squeeze(1)
+        else:
+            preds = logits.argmax(1)
+        return {'loss': loss, 'preds': preds, 'gt': batch['isup'], 'log': {'train_loss': loss}}
+
+    def training_epoch_end(self, outputs):
+        preds = torch.cat([out['preds'] for out in outputs], dim=0)
+        gt = torch.cat([out['gt'] for out in outputs], dim=0)
+        preds = preds.detach().cpu().numpy()
+        gt = gt.detach().cpu().numpy()
+
+        if self.hparams.task == 'regression':
+            self.opt = OptimizedRounder_v2(6)
+            self.opt.fit(preds, gt)
+
+        return {}
 
     def validation_step(self, batch, batch_idx):
         logits = self(batch)
@@ -91,7 +110,7 @@ class LightModel(pl.LightningModule):
             preds = logits.argmax(1)
         return {'val_loss': loss, 'preds': preds, 'gt': batch['isup']}
 
-    def validation_end(self, outputs):
+    def validation_epoch_end(self, outputs):
         avg_loss = torch.cat([out['val_loss'] for out in outputs], dim=0).mean()
         preds = torch.cat([out['preds'] for out in outputs], dim=0)
         gt = torch.cat([out['gt'] for out in outputs], dim=0)
@@ -99,9 +118,10 @@ class LightModel(pl.LightningModule):
         gt = gt.detach().cpu().numpy()
 
         if self.hparams.task == 'regression':
-            opt = OptimizedRounder_v2(6)
-            opt.fit(preds, gt)
-            preds = opt.predict(preds)
+            if self.opt is None:
+                self.opt = OptimizedRounder_v2(6)
+                self.opt.fit(preds, gt)
+            preds = self.opt.predict(preds)
 
         kappa = cohen_kappa_score(preds, gt, weights='quadratic')
         tensorboard_logs = {'val_loss': avg_loss, 'kappa': kappa}
