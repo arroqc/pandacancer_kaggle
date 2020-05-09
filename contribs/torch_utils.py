@@ -74,7 +74,6 @@ class FlatCosineAnnealingLR(torch.optim.lr_scheduler._LRScheduler):
         if self.last_epoch < self.flat_range:
             return [base_lr for base_lr in self.base_lrs]
         else:
-            print('Changing lr')
             cr_epoch = self.last_epoch - self.flat_range
             return [
                 self.eta_min
