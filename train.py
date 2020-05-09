@@ -13,9 +13,9 @@ import pytorch_lightning as pl
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import cohen_kappa_score
 
-from contribs.utils import split_weights, FlatCosineAnnealingLR
-from contribs.over9000 import Over9000
-from contribs.rounder import OptimizedRounder_v2
+from contribs.torch_utils import split_weights, FlatCosineAnnealingLR
+from contribs.fancy_optimizers import Over9000
+from contribs.kappa_rounder import OptimizedRounder_v2
 from datasets import TileDataset
 from modules import Model
 from utils import dict_to_args
@@ -118,13 +118,17 @@ class LightModel(pl.LightningModule):
         gt = gt.detach().cpu().numpy()
 
         if self.hparams.task == 'regression':
-            if self.opt is None:
-                self.opt = OptimizedRounder_v2(6)
-                self.opt.fit(preds, gt)
-            preds = self.opt.predict(preds)
+            if self.hparams.use_opt:
+                if self.opt is None:
+                    self.opt = OptimizedRounder_v2(6)
+                    self.opt.fit(preds, gt)
+                preds = self.opt.predict(preds)
+            else:
+                preds = torch.round(preds)
 
         kappa = cohen_kappa_score(preds, gt, weights='quadratic')
         tensorboard_logs = {'val_loss': avg_loss, 'kappa': kappa}
+        print(f'Epoch {self.current_epoch}: {avg_loss:.2f}, kappa: {kappa:.4f}')
 
         return {'avg_val_loss': avg_loss, 'log': tensorboard_logs}
 
@@ -133,7 +137,7 @@ if __name__ == '__main__':
     TRAIN_PATH = 'D:/Datasets/panda/train_tiles/imgs/'
     CSV_PATH = 'G:/Datasets/panda/train.csv'
     SEED = 34
-    BATCH_SIZE = 8
+    BATCH_SIZE = 16
     EPOCHS = 20
     NAME = 'resnext50'
     OUTPUT_DIR = './lightning_logs'
@@ -157,7 +161,7 @@ if __name__ == '__main__':
                'pretrained': True}
     date = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
     for fold, (train_idx, val_idx) in enumerate(splits):
-
+        print(f'Fold {fold + 1}')
         tb_logger = pl.loggers.TensorBoardLogger(save_dir=OUTPUT_DIR,
                                                  name=f'{NAME}' + '-' + date,
                                                  version=f'fold_{fold+1}')

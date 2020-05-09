@@ -1,6 +1,6 @@
 import torch.nn as nn
 import torch
-from contribs.mish import Mish
+from contribs.mish_activation import Mish
 
 
 class AdaptiveConcatPool2d(nn.Module):
