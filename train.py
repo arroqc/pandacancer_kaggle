@@ -19,6 +19,7 @@ from contribs.kappa_rounder import OptimizedRounder_v2
 from datasets import TileDataset
 from modules import Model
 from utils import dict_to_args
+from data_augmentation import AlbumentationTransform
 
 
 class LightModel(pl.LightningModule):
@@ -46,21 +47,22 @@ class LightModel(pl.LightningModule):
         return self.model(batch['image'])
 
     def prepare_data(self):
-        from data_augmentation import AlbumentationTransform
         transform_train = transforms.Compose([AlbumentationTransform(0.5),
                                               transforms.ToTensor()])
         transform_test = transforms.Compose([transforms.ToTensor()])
-        self.trainset = TileDataset(TRAIN_PATH, df_train.iloc[self.train_idx], transform=transform_train,
+        self.trainset = TileDataset(TRAIN_PATH, df_train.iloc[self.train_idx], num_tiles=12, transform=transform_train,
                                     normalize_stats=self.provider_stats)
-        self.valset = TileDataset(TRAIN_PATH, df_train.iloc[self.val_idx], transform=transform_test,
+        self.valset = TileDataset(TRAIN_PATH, df_train.iloc[self.val_idx], num_tiles=12, transform=transform_test,
                                   normalize_stats=self.provider_stats)
 
     def train_dataloader(self):
-        train_dl = tdata.DataLoader(self.trainset, batch_size=BATCH_SIZE, shuffle=True, num_workers=os.cpu_count())
+        train_dl = tdata.DataLoader(self.trainset, batch_size=BATCH_SIZE, shuffle=True,
+                                    num_workers=min(4, os.cpu_count()))
         return train_dl
 
     def val_dataloader(self):
-        val_dl = tdata.DataLoader(self.valset, batch_size=BATCH_SIZE, shuffle=False, num_workers=os.cpu_count())
+        val_dl = tdata.DataLoader(self.valset, batch_size=BATCH_SIZE, shuffle=False,
+                                  num_workers=min(4, os.cpu_count()))
         return [val_dl]
 
     def cross_entropy_loss(self, logits, gt):
@@ -73,10 +75,20 @@ class LightModel(pl.LightningModule):
 
     def configure_optimizers(self):
         if self.hparams.weight_decay:
-            params = split_weights(self.model)
+            params_backbone = split_weights(self.model.feature_extractor)
+            params_backbone[0]['lr'] = self.hparams.lr_backbone
+            params_backbone[1]['lr'] = self.hparams.lr_backbone
+            params_head = split_weights(self.model.head)
+            params_head[0]['lr'] = self.hparams.lr_head
+            params_head[1]['lr'] = self.hparams.lr_head
+            params = params_backbone + params_head
         else:
-            params = self.model.parameters()
-        optimizer = Over9000(params, lr=self.hparams.lr, weight_decay=1e-4)
+            params_backbone = self.model.feature_extractor.parameters()
+            params_head = self.model.head.parameters()
+            params = [dict(params=params_backbone, lr=self.hparams.lr_backbone),
+                      dict(params=params_head, lr=self.hparams.lr_head)]
+
+        optimizer = Over9000(params, weight_decay=3e-6)
         scheduler = FlatCosineAnnealingLR(optimizer, max_iter=EPOCHS)
         return [optimizer], [scheduler]
 
@@ -124,7 +136,7 @@ class LightModel(pl.LightningModule):
                     self.opt.fit(preds, gt)
                 preds = self.opt.predict(preds)
             else:
-                preds = torch.round(preds)
+                preds = np.round(preds)
 
         kappa = cohen_kappa_score(preds, gt, weights='quadratic')
         tensorboard_logs = {'val_loss': avg_loss, 'kappa': kappa}
@@ -138,7 +150,7 @@ if __name__ == '__main__':
     CSV_PATH = 'G:/Datasets/panda/train.csv'
     SEED = 34
     BATCH_SIZE = 16
-    EPOCHS = 20
+    EPOCHS = 15
     NAME = 'resnext50'
     OUTPUT_DIR = './lightning_logs'
     random.seed(SEED)
@@ -154,11 +166,13 @@ if __name__ == '__main__':
     splits = kfold.split(df_train, df_train['isup_grade'])
     with open('./stats.pkl', 'rb') as file:
         provider_stats = pickle.load(file)
-    hparams = {'lr': 1e-4,
+    hparams = {'lr_head': 1e-3,
+               'lr_backbone': 1e-4,
                'n_tiles': 12,
                'task': 'regression',
                'weight_decay': True,
-               'pretrained': True}
+               'pretrained': True,
+               'use_opt': True}
     date = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
     for fold, (train_idx, val_idx) in enumerate(splits):
         print(f'Fold {fold + 1}')
@@ -171,10 +185,17 @@ if __name__ == '__main__':
 
         model = LightModel(train_idx, val_idx, provider_stats, dict_to_args(hparams))
         trainer = pl.Trainer(gpus=[0], max_nb_epochs=EPOCHS, auto_lr_find=False,
+                             gradient_clip_val=1,
                              logger=tb_logger,
+                             accumulate_grad_batches=64//BATCH_SIZE,
                              checkpoint_callback=checkpoint_callback
                              )
         # lr_finder = trainer.lr_find(model)
         # fig = lr_finder.plot(suggest=True)
         # fig.savefig('lr_plot.png')
         trainer.fit(model)
+
+        if hparams['use_opt']:
+            print(model.opt.coefficients())
+            with open(f'{OUTPUT_DIR}/{NAME}-{date}/fold{fold + 1}_coef.pkl', 'wb') as file:
+                pickle.dump(file=file, obj=list(np.sort(model.opt.coefficients())))

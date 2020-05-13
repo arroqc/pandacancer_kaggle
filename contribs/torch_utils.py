@@ -3,9 +3,9 @@ import torch
 import math
 
 
-def init_weights(net):
+def init_weights(net, mode='relu', a=0):
     """the weights of conv layer and fully connected layers
-    are both initilized with Xavier algorithm, In particular,
+    are both initilized with Kaiming Xavier algorithm, In particular,
     we set the parameters to random values uniformly drawn from [-a, a]
     where a = sqrt(6 * (din + dout)), for batch normalization
     layers, y=1, b=0, all bias initialized to 0.
@@ -14,6 +14,12 @@ def init_weights(net):
     for m in net.modules():
         if isinstance(m, nn.Conv2d):
             if m.bias is not None:
+                if mode == 'relu':
+                    nn.init.kaiming_uniform_(m.weight, 0)
+                elif mode == 'leaky_relu':
+                    nn.init.kaiming_uniform_(m.weight, a, mode=mode)
+                else:
+                    nn.init.kaiming_uniform_(m.weight, 0)
                 nn.init.constant_(m.bias, 0)
 
         elif isinstance(m, nn.BatchNorm2d):

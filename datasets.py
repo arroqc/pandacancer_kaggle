@@ -7,10 +7,11 @@ from pathlib import Path
 
 class TileDataset(tdata.Dataset):
 
-    def __init__(self, img_path, dataframe, transform=None, normalize_stats=None):
+    def __init__(self, img_path, dataframe, num_tiles, transform=None, normalize_stats=None):
 
         self.img_path = Path(img_path)
         self.df = dataframe
+        self.num_tiles = num_tiles
         self.img_list = self.df['image_id'].values
         self.transform = transform
         if normalize_stats is not None:
@@ -23,26 +24,23 @@ class TileDataset(tdata.Dataset):
     def __getitem__(self, idx):
         img_id = self.img_list[idx]
 
-        tiles = self.img_path.glob('**/' + img_id + '*.png')
+        tiles = [str(self.img_path/(img_id + '_' + str(i) + '.png')) for i in range(0, self.num_tiles)]
         metadata = self.df.iloc[idx]
         image_tiles = []
-        try:
-            for tile in tiles:
-                image = Image.open(tile)
 
-                if self.transform is not None:
-                    image = self.transform(image)
+        for tile in tiles:
+            image = Image.open(tile)
 
-                if self.normalize_stats is not None:
-                    image = 1 - image
-                    image = transforms.Normalize([1.0-0.90949707, 1.0-0.8188697, 1.0-0.87795304],
-                                                 [0.36357649, 0.49984502, 0.40477625])(image)
-                    # provider = metadata['data_provider']
-                    # image = self.normalize_stats[provider](image)
-                image_tiles.append(image)
-        except:
-            print('ISSUE')
-            return self.__getitem__(0)
+            if self.transform is not None:
+                image = self.transform(image)
+
+            if self.normalize_stats is not None:
+                image = 1 - image
+                image = transforms.Normalize([1.0-0.90949707, 1.0-0.8188697, 1.0-0.87795304],
+                                             [0.36357649, 0.49984502, 0.40477625])(image)
+                # provider = metadata['data_provider']
+                # image = self.normalize_stats[provider](image)
+            image_tiles.append(image)
 
         image_tiles = torch.stack(image_tiles, dim=0)
 
