@@ -35,7 +35,7 @@ class Model(nn.Module):
                                   nn.Linear(c_feature * 2, 512),
                                   Mish(),
                                   nn.BatchNorm1d(512),
-                                  nn.Dropout(0.2),
+                                  nn.Dropout(0.5),
                                   nn.Linear(512, c_out))
 
     def forward(self, x):

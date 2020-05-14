@@ -4,6 +4,7 @@ import random
 import os
 import pickle
 import datetime
+import argparse
 
 import torch
 import torch.nn as nn
@@ -19,7 +20,13 @@ from contribs.kappa_rounder import OptimizedRounder_v2
 from datasets import TileDataset
 from modules import Model
 from utils import dict_to_args
-from data_augmentation import AlbumentationTransform
+from data_augmentation import AlbumentationTransform, TilesCompose, TilesRandomDuplicate, TilesRandomRemove
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--root_dir", default='D:/Datasets/panda', required=False)
+args = parser.parse_args()
+ROOT_PATH = args.root_dir
 
 
 class LightModel(pl.LightningModule):
@@ -50,8 +57,14 @@ class LightModel(pl.LightningModule):
         transform_train = transforms.Compose([AlbumentationTransform(0.5),
                                               transforms.ToTensor()])
         transform_test = transforms.Compose([transforms.ToTensor()])
+
+        tiles_transform = None
+        if self.hparams.tiles_data_augmentation:
+            tiles_transform = TilesCompose([TilesRandomRemove(p=0.7, num=4),
+                                            TilesRandomDuplicate(p=0.7, num=4)])
+
         self.trainset = TileDataset(TRAIN_PATH, df_train.iloc[self.train_idx], num_tiles=12, transform=transform_train,
-                                    normalize_stats=self.provider_stats)
+                                    normalize_stats=self.provider_stats, tiles_transform=tiles_transform)
         self.valset = TileDataset(TRAIN_PATH, df_train.iloc[self.val_idx], num_tiles=12, transform=transform_test,
                                   normalize_stats=self.provider_stats)
 
@@ -67,7 +80,10 @@ class LightModel(pl.LightningModule):
 
     def cross_entropy_loss(self, logits, gt):
         if self.hparams.task == 'regression':
-            loss_fn = nn.MSELoss()
+            if self.hparams.reg_loss == 'mse':
+                loss_fn = nn.MSELoss()
+            elif self.hparams.reg_loss == 'smooth_l1':
+                loss_fn = nn.SmoothL1Loss()
             gt = gt.unsqueeze(1).float()
         else:
             loss_fn = nn.CrossEntropyLoss()
@@ -146,8 +162,9 @@ class LightModel(pl.LightningModule):
 
 
 if __name__ == '__main__':
-    TRAIN_PATH = 'D:/Datasets/panda/train_tiles/imgs/'
-    CSV_PATH = 'G:/Datasets/panda/train.csv'
+
+    TRAIN_PATH = ROOT_PATH + '/train_tiles/imgs/'
+    CSV_PATH = ROOT_PATH + '/train.csv'
     SEED = 34
     BATCH_SIZE = 16
     EPOCHS = 15
@@ -169,16 +186,18 @@ if __name__ == '__main__':
     hparams = {'lr_head': 1e-3,
                'lr_backbone': 1e-4,
                'n_tiles': 12,
-               'task': 'regression',
+               'task': 'regression',  # regression or classification
                'weight_decay': True,
                'pretrained': True,
-               'use_opt': True}
+               'use_opt': True,
+               'tiles_data_augmentation': True,
+               'reg_loss': 'mse'}  # smooth_l1 or mse
     date = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
     for fold, (train_idx, val_idx) in enumerate(splits):
         print(f'Fold {fold + 1}')
         tb_logger = pl.loggers.TensorBoardLogger(save_dir=OUTPUT_DIR,
                                                  name=f'{NAME}' + '-' + date,
-                                                 version=f'fold_{fold+1}')
+                                                 version=f'fold_{fold + 1}')
 
         checkpoint_callback = pl.callbacks.ModelCheckpoint(filepath=tb_logger.log_dir + "/{epoch:02d}-{kappa:.4f}",
                                                            monitor='kappa', mode='max')
@@ -187,7 +206,7 @@ if __name__ == '__main__':
         trainer = pl.Trainer(gpus=[0], max_nb_epochs=EPOCHS, auto_lr_find=False,
                              gradient_clip_val=1,
                              logger=tb_logger,
-                             accumulate_grad_batches=64//BATCH_SIZE,
+                             accumulate_grad_batches=1,              # BatchNorm ?
                              checkpoint_callback=checkpoint_callback
                              )
         # lr_finder = trainer.lr_find(model)
@@ -199,3 +218,9 @@ if __name__ == '__main__':
             print(model.opt.coefficients())
             with open(f'{OUTPUT_DIR}/{NAME}-{date}/fold{fold + 1}_coef.pkl', 'wb') as file:
                 pickle.dump(file=file, obj=list(np.sort(model.opt.coefficients())))
+
+# Tests to do:
+# L1Smooth
+# Gradient accumulation
+# Test each options
+# Level 1 images

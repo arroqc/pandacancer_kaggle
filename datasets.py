@@ -7,13 +7,15 @@ from pathlib import Path
 
 class TileDataset(tdata.Dataset):
 
-    def __init__(self, img_path, dataframe, num_tiles, transform=None, normalize_stats=None):
+    def __init__(self, img_path, dataframe, num_tiles, transform=None, normalize_stats=None,
+                 tiles_transform=None):
 
         self.img_path = Path(img_path)
         self.df = dataframe
         self.num_tiles = num_tiles
         self.img_list = self.df['image_id'].values
         self.transform = transform
+        self.tiles_transform = tiles_transform
         if normalize_stats is not None:
             self.normalize_stats = {}
             for k, v in normalize_stats.items():
@@ -43,6 +45,9 @@ class TileDataset(tdata.Dataset):
             image_tiles.append(image)
 
         image_tiles = torch.stack(image_tiles, dim=0)
+
+        if self.tiles_transform is not None:
+            image_tiles = self.tiles_transform(image_tiles)
 
         return {'image': image_tiles, 'provider': metadata['data_provider'],
                 'isup': metadata['isup_grade'], 'gleason': metadata['gleason_score']}
