@@ -22,13 +22,14 @@ class Flatten(nn.Module):
 
 class Model(nn.Module):
 
-    def __init__(self, c_out=6, n_tiles=12, pretrained=True, **kwargs):
+    def __init__(self, c_out=6, n_tiles=12, tile_size=128, pretrained=True, **kwargs):
         super().__init__()
         m = torch.hub.load('facebookresearch/semi-supervised-ImageNet1K-models', 'resnext50_32x4d_ssl')
         # m = models.resnet50(pretrained=pretrained)
         c_feature = list(m.children())[-1].in_features
         self.feature_extractor = nn.Sequential(*list(m.children())[:-2])
         self.n_tiles = n_tiles
+        self.tile_size = tile_size
         self.head = nn.Sequential(AdaptiveConcatPool2d(),
                                   Flatten(),
                                   nn.Dropout(0.5),
@@ -39,7 +40,7 @@ class Model(nn.Module):
                                   nn.Linear(512, c_out))
 
     def forward(self, x):
-        h = x.view(-1, 3, 128, 128)
+        h = x.view(-1, 3, self.tile_size, self.tile_size)
         h = self.feature_extractor(h)
         bn, c, height, width = h.shape
         h = h.view(-1, self.n_tiles, c, height, width).permute(0, 2, 1, 3, 4)\

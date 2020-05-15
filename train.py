@@ -123,7 +123,7 @@ class LightModel(pl.LightningModule):
         preds = preds.detach().cpu().numpy()
         gt = gt.detach().cpu().numpy()
 
-        if self.hparams.task == 'regression':
+        if self.hparams.task == 'regression' and self.hparams.opt_fit == 'train':
             self.opt = OptimizedRounder_v2(6)
             self.opt.fit(preds, gt)
 
@@ -147,7 +147,7 @@ class LightModel(pl.LightningModule):
 
         if self.hparams.task == 'regression':
             if self.hparams.use_opt:
-                if self.opt is None:
+                if self.opt is None or self.hparams.opt_fit == 'val':
                     self.opt = OptimizedRounder_v2(6)
                     self.opt.fit(preds, gt)
                 preds = self.opt.predict(preds)
@@ -163,7 +163,22 @@ class LightModel(pl.LightningModule):
 
 if __name__ == '__main__':
 
-    TRAIN_PATH = ROOT_PATH + '/train_tiles/imgs/'
+    hparams = {'lr_head': 1e-3,
+               'lr_backbone': 1e-4,
+               'n_tiles': 12,
+               'tile_size': 128,
+               'task': 'regression',  # regression or classification
+               'weight_decay': True,
+               'pretrained': True,
+               'use_opt': True,
+               'opt_fit': 'val',
+               'tiles_data_augmentation': True,
+               'reg_loss': 'smooth_l1'}  # smooth_l1 or mse
+
+    #LEVEL = 1
+    #SIZE = 128
+    #TRAIN_PATH = ROOT_PATH + f'/train_tiles_{SIZE}_{LEVEL}/imgs/'
+    TRAIN_PATH = ROOT_PATH + f'/train_tiles/imgs/'
     CSV_PATH = ROOT_PATH + '/train.csv'
     SEED = 34
     BATCH_SIZE = 16
@@ -183,15 +198,7 @@ if __name__ == '__main__':
     splits = kfold.split(df_train, df_train['isup_grade'])
     with open('./stats.pkl', 'rb') as file:
         provider_stats = pickle.load(file)
-    hparams = {'lr_head': 1e-3,
-               'lr_backbone': 1e-4,
-               'n_tiles': 12,
-               'task': 'regression',  # regression or classification
-               'weight_decay': True,
-               'pretrained': True,
-               'use_opt': True,
-               'tiles_data_augmentation': True,
-               'reg_loss': 'mse'}  # smooth_l1 or mse
+
     date = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
     for fold, (train_idx, val_idx) in enumerate(splits):
         print(f'Fold {fold + 1}')
@@ -220,7 +227,7 @@ if __name__ == '__main__':
                 pickle.dump(file=file, obj=list(np.sort(model.opt.coefficients())))
 
 # Tests to do:
-# L1Smooth
+# L1Smooth (small improvement)
 # Gradient accumulation
 # Test each options
 # Level 1 images

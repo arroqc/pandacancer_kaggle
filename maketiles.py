@@ -59,6 +59,7 @@ TRAIN_PATH = BASE_PATH/'train_images/'
 MASKS_TRAIN_PATH = BASE_PATH/'train_label_masks/'
 OUTPUT_IMG_PATH = OUTPUT_BASE/'train_tiles_256_2/imgs/'
 OUTPUT_MASK_PATH = OUTPUT_BASE/'train_tiles_256_2/masks/'
+PICKLE_NAME = OUTPUT_BASE/'stats_256_2.pkl'
 CSV_PATH = BASE_PATH/'train.csv'
 LEVEL = -2
 
@@ -108,13 +109,18 @@ for i, img_fn in enumerate(img_list):
 image_stats = pd.DataFrame(image_stats)
 df = pd.read_csv(CSV_PATH)
 df = pd.merge(df, image_stats, on='image_id', how='left')
+
 provider_stats = {}
 for provider in df['data_provider'].unique():
     mean = (df[df['data_provider'] == provider]['mean']).mean()
     std = np.sqrt((df[df['data_provider'] == provider]['mean_square']).mean() - mean ** 2)
     provider_stats[provider] = (mean, std)
+
+mean = (df['mean']).mean()
+std = np.sqrt((df['mean_square']).mean() - mean ** 2)
 provider_stats['all'] = (mean, std)
-with open(OUTPUT_BASE/'stats.pkl', 'wb') as file:
+
+with open(PICKLE_NAME, 'wb') as file:
     pickle.dump(provider_stats, file)
 
 print(bad_images)
