@@ -6,7 +6,7 @@ import pickle
 
 
 base = "C:/Users/Necka/PycharmProjects\panda/pandacancer_kaggle/lightning_logs/"
-model_name = "resnext50-20200511-184422"
+model_name = "resnext50-20200514-073511"
 paths = [Path(base + model_name + '/fold_' + str(i)) for i in range(1, 6)]
 paths = [list(path.glob('*.ckpt'))[0] for path in paths]
 print(paths)

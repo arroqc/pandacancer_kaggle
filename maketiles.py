@@ -49,30 +49,35 @@ class TileMaker:
                           mode='constant', constant_values=0)
 
         # Find the images with the most stuff (the most red):
-        sorted_tiles = np.argsort(np.sum(image[:, :, :, 0:1], axis=(1, 2, 3)))
+        non_white = np.where(image < 245, image, np.zeros_like(image))
+        sorted_tiles = np.argsort(np.sum(255-image, axis=(1, 2, 3)))[::-1]
         sorted_tiles = sorted_tiles[:self.number]
 
         return image[sorted_tiles], mask[sorted_tiles]
 
 
+SIZE = 128
+NUM = 64
+LEVEL = 2
 TRAIN_PATH = BASE_PATH/'train_images/'
 MASKS_TRAIN_PATH = BASE_PATH/'train_label_masks/'
-OUTPUT_IMG_PATH = OUTPUT_BASE/'train_tiles_256_2/imgs/'
-OUTPUT_MASK_PATH = OUTPUT_BASE/'train_tiles_256_2/masks/'
-PICKLE_NAME = OUTPUT_BASE/'stats_256_2.pkl'
+OUTPUT_IMG_PATH = OUTPUT_BASE/f'train_tiles_{SIZE}_{LEVEL}/imgs/'
+OUTPUT_MASK_PATH = OUTPUT_BASE/f'train_tiles_{SIZE}_{LEVEL}/masks/'
+PICKLE_NAME = OUTPUT_BASE/f'stats_{SIZE}_{LEVEL}.pkl'
 CSV_PATH = BASE_PATH/'train.csv'
-LEVEL = -2
+
 
 OUTPUT_IMG_PATH.mkdir(exist_ok=True, parents=True)
 OUTPUT_MASK_PATH.mkdir(exist_ok=True, parents=True)
 
-tile_maker = TileMaker(256, 12)
+tile_maker = TileMaker(SIZE, NUM)
 
 img_list = list(TRAIN_PATH.glob('**/*.tiff'))
 # img_list.pop(5765)
 bad_images = []
 bad_masks = []
 image_stats = []
+files = []
 for i, img_fn in enumerate(img_list):
 
     img_id = img_fn.stem
@@ -80,7 +85,7 @@ for i, img_fn in enumerate(img_list):
 
     try:
         col = skimage.io.MultiImage(str(img_fn))
-        image = col[LEVEL]
+        image = col[-LEVEL]
     except:
         bad_images.append(img_id)
         continue
@@ -88,7 +93,7 @@ for i, img_fn in enumerate(img_list):
     if mask_fn.exists():
 
         try:
-            mask = skimage.io.MultiImage(str(mask_fn))[LEVEL]
+            mask = skimage.io.MultiImage(str(mask_fn))[-LEVEL]
         except:
             bad_masks.append(img_id)
             mask = np.zeros_like(image)
@@ -100,20 +105,26 @@ for i, img_fn in enumerate(img_list):
     sys.stdout.write(f'\r{i + 1}/{len(img_list)}')
 
     image_stats.append({'image_id': img_id, 'mean': image.mean(axis=(0, 1, 2)) / 255,
-                        'mean_square': ((image / 255) ** 2).mean(axis=(0, 1, 2))})
+                        'mean_square': ((image / 255) ** 2).mean(axis=(0, 1, 2)),
+                        'img_mean': (255 - image).mean()})
 
     for i, (tile_image, tile_mask) in enumerate(zip(image, mask)):
-        skimage.io.imsave(OUTPUT_IMG_PATH / (img_id + '_' + str(i) + '.png'), tile_image, check_contrast=False)
-        skimage.io.imsave(OUTPUT_MASK_PATH / (img_id + '_' + str(i) + '.png'), tile_mask, check_contrast=False)
+        a = (img_id + '_' + str(i) + '.png')
+        b = (img_id + '_' + str(i) + '.png')
+        files.append({'image_id': img_id, 'num': i, 'filename': a, 'maskname': b,
+                      'value': (255-tile_image[:, :, 0]).mean()})
+        skimage.io.imsave(OUTPUT_IMG_PATH / a, tile_image, check_contrast=False)
+        skimage.io.imsave(OUTPUT_MASK_PATH / b, tile_mask, check_contrast=False)
 
 image_stats = pd.DataFrame(image_stats)
 df = pd.read_csv(CSV_PATH)
 df = pd.merge(df, image_stats, on='image_id', how='left')
+df[['image_id', 'img_mean']].to_csv(OUTPUT_BASE/f'img_mean_{SIZE}_{LEVEL}.csv', index=False)
 
 provider_stats = {}
 for provider in df['data_provider'].unique():
-    mean = (df[df['data_provider'] == provider]['mean']).mean()
-    std = np.sqrt((df[df['data_provider'] == provider]['mean_square']).mean() - mean ** 2)
+    mean = (df[df['data_provider'] == provider]['mean']).mean(0)
+    std = np.sqrt((df[df['data_provider'] == provider]['mean_square']).mean(0) - mean ** 2)
     provider_stats[provider] = (mean, std)
 
 mean = (df['mean']).mean()
@@ -122,6 +133,8 @@ provider_stats['all'] = (mean, std)
 
 with open(PICKLE_NAME, 'wb') as file:
     pickle.dump(provider_stats, file)
+
+pd.DataFrame(files).to_csv(OUTPUT_BASE/f'files_{SIZE}_{LEVEL}.csv', index=False)
 
 print(bad_images)
 print(bad_masks)

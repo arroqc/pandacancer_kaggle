@@ -40,8 +40,9 @@ class TileDataset(tdata.Dataset):
                 image = 1 - image
                 image = transforms.Normalize([1.0-0.90949707, 1.0-0.8188697, 1.0-0.87795304],
                                              [0.36357649, 0.49984502, 0.40477625])(image)
-                # provider = metadata['data_provider']
-                # image = self.normalize_stats[provider](image)
+                #provider = metadata['data_provider']
+                #image = self.normalize_stats[provider](image)
+                # image = self.normalize_stats['all'](image)
             image_tiles.append(image)
 
         image_tiles = torch.stack(image_tiles, dim=0)
@@ -54,3 +55,10 @@ class TileDataset(tdata.Dataset):
 
     def __len__(self):
         return len(self.img_list)
+
+
+# import pandas as pd
+# values = pd.read_csv("D:\Datasets\panda/files_256_2.csv")
+# img_id = '000920ad0b612851f8e01bcc880d9b3d'
+# vals = values[values['image_id'] == img_id]
+# print(vals.sample(16, weights=vals['value'])['filename'])

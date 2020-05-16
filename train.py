@@ -63,19 +63,19 @@ class LightModel(pl.LightningModule):
             tiles_transform = TilesCompose([TilesRandomRemove(p=0.7, num=4),
                                             TilesRandomDuplicate(p=0.7, num=4)])
 
-        self.trainset = TileDataset(TRAIN_PATH, df_train.iloc[self.train_idx], num_tiles=12, transform=transform_train,
+        self.trainset = TileDataset(TRAIN_PATH, df_train.iloc[self.train_idx], num_tiles=self.hparams.n_tiles, transform=transform_train,
                                     normalize_stats=self.provider_stats, tiles_transform=tiles_transform)
-        self.valset = TileDataset(TRAIN_PATH, df_train.iloc[self.val_idx], num_tiles=12, transform=transform_test,
+        self.valset = TileDataset(TRAIN_PATH, df_train.iloc[self.val_idx], num_tiles=self.hparams.n_tiles, transform=transform_test,
                                   normalize_stats=self.provider_stats)
 
     def train_dataloader(self):
         train_dl = tdata.DataLoader(self.trainset, batch_size=BATCH_SIZE, shuffle=True,
-                                    num_workers=min(4, os.cpu_count()))
+                                    num_workers=min(6, os.cpu_count()))
         return train_dl
 
     def val_dataloader(self):
         val_dl = tdata.DataLoader(self.valset, batch_size=BATCH_SIZE, shuffle=False,
-                                  num_workers=min(4, os.cpu_count()))
+                                  num_workers=min(6, os.cpu_count()))
         return [val_dl]
 
     def cross_entropy_loss(self, logits, gt):
@@ -163,26 +163,26 @@ class LightModel(pl.LightningModule):
 
 if __name__ == '__main__':
 
-    hparams = {'lr_head': 1e-3,
+    hparams = {'lr_head': 1e-4,
                'lr_backbone': 1e-4,
                'n_tiles': 12,
+               'level': 1,
                'tile_size': 128,
                'task': 'regression',  # regression or classification
-               'weight_decay': True,
+               'weight_decay': False,
                'pretrained': True,
                'use_opt': True,
-               'opt_fit': 'val',
-               'tiles_data_augmentation': True,
-               'reg_loss': 'smooth_l1'}  # smooth_l1 or mse
+               'opt_fit': 'train',
+               'tiles_data_augmentation': False,  # Small improvement
+               'reg_loss': 'smooth_l1'}  # Small improvement
 
-    #LEVEL = 1
-    #SIZE = 128
-    #TRAIN_PATH = ROOT_PATH + f'/train_tiles_{SIZE}_{LEVEL}/imgs/'
-    TRAIN_PATH = ROOT_PATH + f'/train_tiles/imgs/'
+    LEVEL = hparams['level']
+    SIZE = hparams['tile_size']
+    TRAIN_PATH = ROOT_PATH + f'/train_tiles_{SIZE}_{LEVEL}/imgs/'
     CSV_PATH = ROOT_PATH + '/train.csv'
-    SEED = 34
+    SEED = 33
     BATCH_SIZE = 16
-    EPOCHS = 15
+    EPOCHS = 30
     NAME = 'resnext50'
     OUTPUT_DIR = './lightning_logs'
     random.seed(SEED)
@@ -196,7 +196,7 @@ if __name__ == '__main__':
     df_train = df_train[~(df_train['image_id'].isin(['8d90013d52788c1e2f5f47ad80e65d48']))]
     kfold = StratifiedKFold(n_splits=5, random_state=SEED, shuffle=True)
     splits = kfold.split(df_train, df_train['isup_grade'])
-    with open('./stats.pkl', 'rb') as file:
+    with open(f'{ROOT_PATH}/stats_{SIZE}_{LEVEL}.pkl', 'rb') as file:
         provider_stats = pickle.load(file)
 
     date = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
@@ -226,8 +226,14 @@ if __name__ == '__main__':
             with open(f'{OUTPUT_DIR}/{NAME}-{date}/fold{fold + 1}_coef.pkl', 'wb') as file:
                 pickle.dump(file=file, obj=list(np.sort(model.opt.coefficients())))
 
+        # Todo: One fold training
+        break
+
 # Tests to do:
 # L1Smooth (small improvement)
 # Gradient accumulation
 # Test each options
-# Level 1 images
+# Level 1 images > Increase size and/or number
+# Longer training
+# Max/avg pool per tile then self attention.
+# Use both level 1 and level 2

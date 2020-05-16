@@ -40,6 +40,7 @@ class Model(nn.Module):
                                   nn.Linear(512, c_out))
 
     def forward(self, x):
+
         h = x.view(-1, 3, self.tile_size, self.tile_size)
         h = self.feature_extractor(h)
         bn, c, height, width = h.shape
