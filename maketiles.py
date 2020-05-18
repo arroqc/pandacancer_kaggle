@@ -14,6 +14,16 @@ args = parser.parse_args()
 BASE_PATH = Path(args.base_dir)
 OUTPUT_BASE = Path(args.out_dir)
 
+SIZE = 128
+NUM = 16
+LEVEL = 1
+TRAIN_PATH = BASE_PATH/'train_images/'
+MASKS_TRAIN_PATH = BASE_PATH/'train_label_masks/'
+OUTPUT_IMG_PATH = OUTPUT_BASE/f'train_tiles_{SIZE}_{LEVEL}/imgs/'
+OUTPUT_MASK_PATH = OUTPUT_BASE/f'train_tiles_{SIZE}_{LEVEL}/masks/'
+PICKLE_NAME = OUTPUT_BASE/f'stats_{SIZE}_{LEVEL}.pkl'
+CSV_PATH = BASE_PATH/'train.csv'
+
 
 class TileMaker:
 
@@ -21,7 +31,29 @@ class TileMaker:
         self.size = size
         self.number = number
 
-    def make(self, image, mask):
+    def make_multistride(self, image, mask):
+        # Pad only once
+        image, mask = self.__pad(image, mask)
+        s0, _ = self.__get_tiles(image, mask)
+
+        # For strided grids, need to also remove on the right/bottom
+        s1, _ = self.__get_tiles(image[self.size // 2:-self.size // 2, :],
+                                 mask[self.size // 2:-self.size // 2, :])
+        s2, _ = self.__get_tiles(image[:, self.size // 2:-self.size // 2],
+                                 image[:, self.size // 2:-self.size // 2])
+        s3, _ = self.__get_tiles(image[self.size // 2:-self.size // 2, self.size // 2:-self.size // 2],
+                                 image[self.size // 2:-self.size // 2, self.size // 2:-self.size // 2])
+
+        all_tiles = np.concatenate([s0, s1, s2, s3], axis=0)
+        # Find the images with the most stuff (the most red):
+        red_channel = all_tiles[:, :, :, 0]
+        tissue = np.where((red_channel < 230) & (red_channel > 200), red_channel, 0)
+        sorted_tiles = np.argsort(np.sum(tissue, axis=(1, 2)))[::-1]
+        sorted_tiles = sorted_tiles[:self.number * 4]
+
+        return all_tiles[sorted_tiles], _
+
+    def __pad(self, image, mask):
         h, w, c = image.shape
         horizontal_pad = 0 if (w % self.size) == 0 else self.size - (w % self.size)
         vertical_pad = 0 if (h % self.size) == 0 else self.size - (h % self.size)
@@ -35,7 +67,9 @@ class TileMaker:
                                        (horizontal_pad // 2, horizontal_pad - horizontal_pad // 2),
                                        (0, 0)),
                       mode='constant', constant_values=0)  # Empty is black in this data
+        return image, mask
 
+    def __get_tiles(self, image, mask):
         h, w, c = image.shape
         image = image.reshape(h // self.size, self.size, w // self.size, self.size, c)
         image = image.swapaxes(1, 2).reshape(-1, self.size, self.size, c)
@@ -48,23 +82,18 @@ class TileMaker:
             mask = np.pad(mask, pad_width=((0, self.number - mask.shape[0]), (0, 0), (0, 0), (0, 0)),
                           mode='constant', constant_values=0)
 
-        # Find the images with the most stuff (the most red):
-        # non_white = np.where(image < 245, image, np.zeros_like(image))
-        sorted_tiles = np.argsort(np.sum(255-image, axis=(1, 2, 3)))[::-1]
+        return image, mask
+
+    def make(self, image, mask):
+        image, mask = self.__pad(image, mask)
+        image, mask = self.__get_tiles(image, mask)
+        # Find the images with the most non white stuff
+        red_channel = image[:, :, :, 0]
+        tissue = np.where((red_channel < 230) & (red_channel > 200), red_channel, 0)
+        sorted_tiles = np.argsort(np.sum(tissue, axis=(1, 2)))[::-1]
         sorted_tiles = sorted_tiles[:self.number]
 
         return image[sorted_tiles], mask[sorted_tiles]
-
-
-SIZE = 128
-NUM = 64
-LEVEL = 2
-TRAIN_PATH = BASE_PATH/'train_images/'
-MASKS_TRAIN_PATH = BASE_PATH/'train_label_masks/'
-OUTPUT_IMG_PATH = OUTPUT_BASE/f'train_tiles_{SIZE}_{LEVEL}/imgs/'
-OUTPUT_MASK_PATH = OUTPUT_BASE/f'train_tiles_{SIZE}_{LEVEL}/masks/'
-PICKLE_NAME = OUTPUT_BASE/f'stats_{SIZE}_{LEVEL}.pkl'
-CSV_PATH = BASE_PATH/'train.csv'
 
 
 OUTPUT_IMG_PATH.mkdir(exist_ok=True, parents=True)

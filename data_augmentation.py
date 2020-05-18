@@ -23,7 +23,7 @@ class AlbumentationTransform:
 #     ], p=p)
 
 
-def strong_aug(p=.5):
+def strong_aug(p=1):
     return Compose([
         HorizontalFlip(p=0.5),
         VerticalFlip(p=0.5),
@@ -32,7 +32,7 @@ def strong_aug(p=.5):
         GaussNoise(p=0.2),
         RandomBrightnessContrast(brightness_limit=0.15, contrast_limit=0.15, p=0.2),
         HueSaturationValue(hue_shift_limit=10, sat_shift_limit=20, p=0.2)
-        ], p=1)
+        ], p=p)
 
 
 class TilesRandomDuplicate:
