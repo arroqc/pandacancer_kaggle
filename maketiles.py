@@ -49,7 +49,7 @@ class TileMaker:
                           mode='constant', constant_values=0)
 
         # Find the images with the most stuff (the most red):
-        non_white = np.where(image < 245, image, np.zeros_like(image))
+        # non_white = np.where(image < 245, image, np.zeros_like(image))
         sorted_tiles = np.argsort(np.sum(255-image, axis=(1, 2, 3)))[::-1]
         sorted_tiles = sorted_tiles[:self.number]
 

@@ -37,13 +37,16 @@ class LightModel(pl.LightningModule):
         self.val_idx = val_idx
 
         if hparams.task == 'regression':
-            self.model = Model(c_out=1,
-                               n_tiles=hparams.n_tiles,
-                               pretrained=hparams.pretrained)
+            c_out = 1
         else:
-            self.model = Model(c_out=6,
-                               n_tiles=hparams.n_tiles,
-                               pretrained=hparams.pretrained)
+            c_out = 6
+
+        self.model = Model(c_out=c_out,
+                           n_tiles=hparams.n_tiles,
+                           tile_size=hparams.tile_size,
+                           backbone=hparams.backbone,
+                           head=hparams.head)
+
         self.provider_stats = provider_stats
         self.hparams = hparams
         self.opt = None
@@ -90,6 +93,7 @@ class LightModel(pl.LightningModule):
         return loss_fn(logits, gt)
 
     def configure_optimizers(self):
+
         if self.hparams.weight_decay:
             params_backbone = split_weights(self.model.feature_extractor)
             params_backbone[0]['lr'] = self.hparams.lr_backbone
@@ -105,7 +109,7 @@ class LightModel(pl.LightningModule):
                       dict(params=params_head, lr=self.hparams.lr_head)]
 
         optimizer = Over9000(params, weight_decay=3e-6)
-        scheduler = FlatCosineAnnealingLR(optimizer, max_iter=EPOCHS)
+        scheduler = FlatCosineAnnealingLR(optimizer, max_iter=EPOCHS, step_size=17/EPOCHS)
         return [optimizer], [scheduler]
 
     def training_step(self, batch, batch_idx):
@@ -163,13 +167,15 @@ class LightModel(pl.LightningModule):
 
 if __name__ == '__main__':
 
-    hparams = {'lr_head': 1e-4,
+    hparams = {'backbone': 'resnext50_semi',
+               'head': 'basic',
+               'lr_head': 1e-3,
                'lr_backbone': 1e-4,
                'n_tiles': 12,
-               'level': 1,
-               'tile_size': 128,
+               'level': 2,
+               'tile_size': 256,
                'task': 'regression',  # regression or classification
-               'weight_decay': False,
+               'weight_decay': True,
                'pretrained': True,
                'use_opt': True,
                'opt_fit': 'train',
@@ -181,8 +187,8 @@ if __name__ == '__main__':
     TRAIN_PATH = ROOT_PATH + f'/train_tiles_{SIZE}_{LEVEL}/imgs/'
     CSV_PATH = ROOT_PATH + '/train.csv'
     SEED = 33
-    BATCH_SIZE = 16
-    EPOCHS = 30
+    BATCH_SIZE = 4
+    EPOCHS = 100
     NAME = 'resnext50'
     OUTPUT_DIR = './lightning_logs'
     random.seed(SEED)
@@ -198,6 +204,7 @@ if __name__ == '__main__':
     splits = kfold.split(df_train, df_train['isup_grade'])
     with open(f'{ROOT_PATH}/stats_{SIZE}_{LEVEL}.pkl', 'rb') as file:
         provider_stats = pickle.load(file)
+    # values = pd.read_csv(f'{ROOT_PATH}/files_{SIZE}_{LEVEL}.csv')
 
     date = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
     for fold, (train_idx, val_idx) in enumerate(splits):
@@ -235,5 +242,6 @@ if __name__ == '__main__':
 # Test each options
 # Level 1 images > Increase size and/or number
 # Longer training
+# RandomTileDataset
 # Max/avg pool per tile then self attention.
 # Use both level 1 and level 2
