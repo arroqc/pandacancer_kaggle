@@ -17,6 +17,7 @@ OUTPUT_BASE = Path(args.out_dir)
 SIZE = 128
 NUM = 16
 LEVEL = 1
+STRIDE = False
 TRAIN_PATH = BASE_PATH/'train_images/'
 MASKS_TRAIN_PATH = BASE_PATH/'train_label_masks/'
 OUTPUT_IMG_PATH = OUTPUT_BASE/f'train_tiles_{SIZE}_{LEVEL}/imgs/'
@@ -130,7 +131,10 @@ for i, img_fn in enumerate(img_list):
     else:
         mask = np.zeros_like(image)
 
-    image, mask = tile_maker.make(image, mask)
+    if STRIDE:
+        image, mask = tile_maker.make_multistride(image, mask)
+    else:
+        image, mask = tile_maker.make(image, mask)
     sys.stdout.write(f'\r{i + 1}/{len(img_list)}')
 
     image_stats.append({'image_id': img_id, 'mean': image.mean(axis=(0, 1, 2)) / 255,
