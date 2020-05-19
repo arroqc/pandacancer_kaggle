@@ -168,27 +168,27 @@ class LightModel(pl.LightningModule):
 if __name__ == '__main__':
 
     hparams = {'backbone': 'resnext50_semi',
-               'head': 'basic',
+               'head': 'attention_pool',
                'lr_head': 1e-3,
                'lr_backbone': 1e-4,
                'n_tiles': 12,
-               'level': 2,
-               'tile_size': 256,
+               'level': 1,
+               'tile_size': 128,
                'task': 'regression',  # regression or classification
-               'weight_decay': True,
+               'weight_decay': False,
                'pretrained': True,
                'use_opt': True,
                'opt_fit': 'train',
                'tiles_data_augmentation': False,  # Small improvement
-               'reg_loss': 'smooth_l1'}  # Small improvement
+               'reg_loss': 'mse'}  # Small improvement
 
     LEVEL = hparams['level']
     SIZE = hparams['tile_size']
     TRAIN_PATH = ROOT_PATH + f'/train_tiles_{SIZE}_{LEVEL}/imgs/'
     CSV_PATH = ROOT_PATH + '/train.csv'
     SEED = 33
-    BATCH_SIZE = 4
-    EPOCHS = 100
+    BATCH_SIZE = 16
+    EPOCHS = 30
     NAME = 'resnext50'
     OUTPUT_DIR = './lightning_logs'
     random.seed(SEED)

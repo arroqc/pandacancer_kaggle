@@ -40,6 +40,8 @@ class Model(nn.Module):
             self.head = BasicHead(c_feature, c_out, n_tiles)
         elif head == 'attention':
             self.head = SelfAttendedHead(c_feature, c_out, n_tiles)
+        elif head == 'attention_pool':
+            self.head = AttentionPoolHead(c_feature, c_out, n_tiles)
 
     def forward(self, x):
         h = x.view(-1, 3, self.tile_size, self.tile_size)
@@ -120,3 +122,31 @@ class BasicHead(nn.Module):
             .contiguous().view(-1, c, height * self.n_tiles, width)
         h = self.fc(h)
         return h
+
+
+class AttentionPoolHead(nn.Module):
+
+    def __init__(self, c_in, c_out, n_tiles):
+        super().__init__()
+        self.maxpool = nn.AdaptiveMaxPool2d(output_size=(1, 1))
+        self.lin_key = nn.Linear(c_in, c_in//2)
+        self.lin_w = nn.Linear(c_in//2, 1)
+        self.n_tiles = n_tiles
+        self.fc = nn.Sequential(nn.Dropout(0.3),
+                                nn.Linear(c_in, 512),
+                                Mish(),
+                                nn.BatchNorm1d(512),
+                                nn.Dropout(0.3),
+                                nn.Linear(512, c_out))
+
+    def forward(self, x):
+        bn, c, h, w = x.shape
+        h = self.maxpool(x).squeeze(2).squeeze(2)  # bn, c
+        keys = self.lin_key(h)
+        weights = self.lin_w(torch.tanh(keys))
+        weights = weights.reshape(-1, self.n_tiles)
+        weights = torch.softmax(weights, dim=1).unsqueeze(2)  # b, n, 1
+        h = h.reshape(-1, self.n_tiles, c)
+        h = h.transpose(1, 2)
+        pooled = torch.matmul(h, weights).squeeze(2)
+        return self.fc(pooled)

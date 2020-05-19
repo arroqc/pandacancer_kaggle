@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 import pickle
 import argparse
+import cv2
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--base_dir", default='G:/Datasets/panda', required=False)
@@ -24,6 +26,55 @@ OUTPUT_IMG_PATH = OUTPUT_BASE/f'train_tiles_{SIZE}_{LEVEL}/imgs/'
 OUTPUT_MASK_PATH = OUTPUT_BASE/f'train_tiles_{SIZE}_{LEVEL}/masks/'
 PICKLE_NAME = OUTPUT_BASE/f'stats_{SIZE}_{LEVEL}.pkl'
 CSV_PATH = BASE_PATH/'train.csv'
+
+
+pen_marked_images = [
+    'fd6fe1a3985b17d067f2cb4d5bc1e6e1',
+    'ebb6a080d72e09f6481721ef9f88c472',
+    'ebb6d5ca45942536f78beb451ee43cc4',
+    'ea9d52d65500acc9b9d89eb6b82cdcdf',
+    'e726a8eac36c3d91c3c4f9edba8ba713',
+    'e90abe191f61b6fed6d6781c8305fe4b',
+    'fd0bb45eba479a7f7d953f41d574bf9f',
+    'ff10f937c3d52eff6ad4dd733f2bc3ac',
+    'feee2e895355a921f2b75b54debad328',
+    'feac91652a1c5accff08217d19116f1c',
+    'fb01a0a69517bb47d7f4699b6217f69d',
+    'f00ec753b5618cfb30519db0947fe724',
+    'e9a4f528b33479412ee019e155e1a197',
+    'f062f6c1128e0e9d51a76747d9018849',
+    'f39bf22d9a2f313425ee201932bac91a',
+]
+
+
+def remove_pen_marks(img):
+    # Define elliptic kernel
+    kernel5x5 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+
+    # use cv2.inRange to mask pen marks (hardcoded for now)
+    lower = np.array([0, 0, 0])
+    upper = np.array([200, 255, 255])
+    img_mask1 = cv2.inRange(img, lower, upper)
+
+    # Use erosion and findContours to remove masked tissue (side effect of above)
+    img_mask1 = cv2.erode(img_mask1, kernel5x5, iterations=4)
+    img_mask2 = np.zeros(img_mask1.shape, dtype=np.uint8)
+    contours, _ = cv2.findContours(img_mask1, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+    for contour in contours:
+        x, y = contour[:, 0, 0], contour[:, 0, 1]
+        w, h = x.max() - x.min(), y.max() - y.min()
+        if w > 100 and h > 100:
+            cv2.drawContours(img_mask2, [contour], 0, 1, -1)
+    # expand the area of the pen marks
+    img_mask2 = cv2.dilate(img_mask2, kernel5x5, iterations=3)
+    img_mask2 = (1 - img_mask2)
+
+    # Mask out pen marks from original image
+    img = cv2.bitwise_and(img, img, mask=img_mask2)
+
+    img[img == 0] = 255
+
+    return img, img_mask1, img_mask2
 
 
 class TileMaker:
@@ -88,7 +139,7 @@ class TileMaker:
     def make(self, image, mask):
         image, mask = self.__pad(image, mask)
         image, mask = self.__get_tiles(image, mask)
-        # Find the images with the most non white stuff
+        # Find the images with the most dark (epithelium) stuff
         red_channel = image[:, :, :, 0]
         tissue = np.where((red_channel < 230) & (red_channel > 200), red_channel, 0)
         sorted_tiles = np.argsort(np.sum(tissue, axis=(1, 2)))[::-1]
@@ -119,6 +170,9 @@ for i, img_fn in enumerate(img_list):
     except:
         bad_images.append(img_id)
         continue
+
+    if img_id in pen_marked_images:
+        image, _, _ = remove_pen_marks(image)
 
     if mask_fn.exists():
 
