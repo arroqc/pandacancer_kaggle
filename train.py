@@ -109,7 +109,7 @@ class LightModel(pl.LightningModule):
                       dict(params=params_head, lr=self.hparams.lr_head)]
 
         optimizer = Over9000(params, weight_decay=3e-6)
-        scheduler = FlatCosineAnnealingLR(optimizer, max_iter=EPOCHS, step_size=17/EPOCHS)
+        scheduler = FlatCosineAnnealingLR(optimizer, max_iter=EPOCHS, step_size=self.hparams.step_size)
         return [optimizer], [scheduler]
 
     def training_step(self, batch, batch_idx):
@@ -167,28 +167,30 @@ class LightModel(pl.LightningModule):
 
 if __name__ == '__main__':
 
+    EPOCHS = 30
+    SEED = 33
+    BATCH_SIZE = 16
+
     hparams = {'backbone': 'resnext50_semi',
-               'head': 'attention_pool',
+               'head': 'basic',
                'lr_head': 1e-3,
                'lr_backbone': 1e-4,
                'n_tiles': 12,
                'level': 1,
                'tile_size': 128,
-               'task': 'regression',  # regression or classification
+               'task': 'regression',
                'weight_decay': False,
                'pretrained': True,
                'use_opt': True,
                'opt_fit': 'train',
-               'tiles_data_augmentation': False,  # Small improvement
-               'reg_loss': 'mse'}  # Small improvement
+               'tiles_data_augmentation': False,
+               'reg_loss': 'mse',
+               'step_size': 8/EPOCHS}
 
     LEVEL = hparams['level']
     SIZE = hparams['tile_size']
     TRAIN_PATH = ROOT_PATH + f'/train_tiles_{SIZE}_{LEVEL}/imgs/'
     CSV_PATH = ROOT_PATH + '/train.csv'
-    SEED = 33
-    BATCH_SIZE = 16
-    EPOCHS = 30
     NAME = 'resnext50'
     OUTPUT_DIR = './lightning_logs'
     random.seed(SEED)
