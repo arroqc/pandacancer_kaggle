@@ -159,8 +159,9 @@ class LightModel(pl.LightningModule):
                 preds = np.round(preds)
 
         kappa = cohen_kappa_score(preds, gt, weights='quadratic')
-        tensorboard_logs = {'val_loss': avg_loss, 'kappa': kappa}
         print(f'Epoch {self.current_epoch}: {avg_loss:.2f}, kappa: {kappa:.4f}')
+        kappa = torch.tensor(kappa).unsqueeze(0)
+        tensorboard_logs = {'val_loss': avg_loss, 'kappa': kappa}
 
         return {'avg_val_loss': avg_loss, 'log': tensorboard_logs}
 
@@ -170,9 +171,10 @@ if __name__ == '__main__':
     EPOCHS = 30
     SEED = 33
     BATCH_SIZE = 16
+    PRECISION = 32
 
     hparams = {'backbone': 'resnext50_semi',
-               'head': 'basic',
+               'head': 'attention_pool',
                'lr_head': 1e-3,
                'lr_backbone': 1e-4,
                'n_tiles': 12,
@@ -223,7 +225,8 @@ if __name__ == '__main__':
                              gradient_clip_val=1,
                              logger=tb_logger,
                              accumulate_grad_batches=1,              # BatchNorm ?
-                             checkpoint_callback=checkpoint_callback
+                             checkpoint_callback=checkpoint_callback,
+                             precision=PRECISION
                              )
         # lr_finder = trainer.lr_find(model)
         # fig = lr_finder.plot(suggest=True)
