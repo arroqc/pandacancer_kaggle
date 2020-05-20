@@ -108,8 +108,14 @@ class LightModel(pl.LightningModule):
             params = [dict(params=params_backbone, lr=self.hparams.lr_backbone),
                       dict(params=params_head, lr=self.hparams.lr_head)]
 
-        optimizer = Over9000(params, weight_decay=3e-6)
-        scheduler = FlatCosineAnnealingLR(optimizer, max_iter=EPOCHS, step_size=self.hparams.step_size)
+        if self.hparams.opt_algo == 'over9000':
+            optimizer = Over9000(params, weight_decay=3e-6)
+            scheduler = FlatCosineAnnealingLR(optimizer, max_iter=EPOCHS, step_size=self.hparams.step_size)
+        elif self.hparams.opt_algo == 'adam':
+            optimizer = torch.optim.Adam(params, weight_decay=3e-6)
+            scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=self.hparams.lr_head * 10, epochs=EPOCHS,
+                                                            steps_per_epoch=len(self.val_dataloader()),
+                                                            pct_start=0.3, anneal_strategy='cos')
         return [optimizer], [scheduler]
 
     def training_step(self, batch, batch_idx):
