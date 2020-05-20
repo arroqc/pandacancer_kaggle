@@ -27,13 +27,16 @@ class Model(nn.Module):
         super().__init__()
         if backbone == 'resnext50_semi':
             m = torch.hub.load('facebookresearch/semi-supervised-ImageNet1K-models', 'resnext50_32x4d_ssl')
+            remove_range = 2
         elif backbone == 'resnet50':
             m = models.resnet50(pretrained=True)
+            remove_range = 2
         elif backbone == 'densenet121':
             m = models.densenet121(pretrained=True)
+            remove_range = 1
 
         c_feature = list(m.children())[-1].in_features
-        self.feature_extractor = nn.Sequential(*list(m.children())[:-2])
+        self.feature_extractor = nn.Sequential(*list(m.children())[:-remove_range])
         self.n_tiles = n_tiles
         self.tile_size = tile_size
         if head == 'basic':

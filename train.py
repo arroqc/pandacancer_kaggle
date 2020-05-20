@@ -111,12 +111,12 @@ class LightModel(pl.LightningModule):
         if self.hparams.opt_algo == 'over9000':
             optimizer = Over9000(params, weight_decay=3e-6)
             scheduler = FlatCosineAnnealingLR(optimizer, max_iter=EPOCHS, step_size=self.hparams.step_size)
+            return [optimizer], [scheduler]
+
         elif self.hparams.opt_algo == 'adam':
             optimizer = torch.optim.Adam(params, weight_decay=3e-6)
-            scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=self.hparams.lr_head * 10, epochs=EPOCHS,
-                                                            steps_per_epoch=len(self.val_dataloader()),
-                                                            pct_start=0.3, anneal_strategy='cos')
-        return [optimizer], [scheduler]
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=3, factor=0.5)
+            return [optimizer], [scheduler]
 
     def training_step(self, batch, batch_idx):
         logits = self(batch)
@@ -166,7 +166,7 @@ class LightModel(pl.LightningModule):
 
         kappa = cohen_kappa_score(preds, gt, weights='quadratic')
         print(f'Epoch {self.current_epoch}: {avg_loss:.2f}, kappa: {kappa:.4f}')
-        kappa = torch.tensor(kappa).unsqueeze(0)
+        kappa = torch.tensor(kappa)
         tensorboard_logs = {'val_loss': avg_loss, 'kappa': kappa}
 
         return {'avg_val_loss': avg_loss, 'log': tensorboard_logs}
@@ -193,6 +193,7 @@ if __name__ == '__main__':
                'opt_fit': 'train',
                'tiles_data_augmentation': False,
                'reg_loss': 'mse',
+               'opt_algo': 'over9000',
                'step_size': 8/EPOCHS}
 
     LEVEL = hparams['level']
@@ -209,7 +210,7 @@ if __name__ == '__main__':
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
     df_train = pd.read_csv(CSV_PATH)
-    df_train = df_train[~(df_train['image_id'].isin(['8d90013d52788c1e2f5f47ad80e65d48']))]
+    df_train = df_train[~(df_train['image_id'].isin(['8d90013d52788c1e2f5f47ad80e65d48']))]  # Todo: ISSUE FOR STACKING !
     kfold = StratifiedKFold(n_splits=5, random_state=SEED, shuffle=True)
     splits = kfold.split(df_train, df_train['isup_grade'])
     with open(f'{ROOT_PATH}/stats_{SIZE}_{LEVEL}.pkl', 'rb') as file:
@@ -244,8 +245,20 @@ if __name__ == '__main__':
             with open(f'{OUTPUT_DIR}/{NAME}-{date}/fold{fold + 1}_coef.pkl', 'wb') as file:
                 pickle.dump(file=file, obj=list(np.sort(model.opt.coefficients())))
 
+        # Fold predictions
+        torch_model = model.model.eval().to('cuda')
+        preds = []
+        with torch.no_grad():
+            for batch in model.val_dataloader()[0]:
+                image = batch['image'].to('cuda')
+                pred = torch_model(image)
+                preds.append(pred)
+        preds = torch.cat(preds, dim=0).squeeze(1).detach().cpu().numpy()
+        pd.DataFrame({'val_idx': val_idx, 'preds': preds}).to_csv(
+            f'{OUTPUT_DIR}/{NAME}-{date}/fold{fold + 1}_preds.csv', index=False)
+
         # Todo: One fold training
-        break
+        # break
 
 # Tests to do:
 # L1Smooth (small improvement)
