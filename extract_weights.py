@@ -5,8 +5,8 @@ from pathlib import Path
 import pickle
 
 
-base = "C:/Users/Necka/PycharmProjects\panda/pandacancer_kaggle/lightning_logs/"
-model_name = "resnext50-20200514-073511"
+base = "C:/Users/Necka/PycharmProjects\panda/pandacancer_kaggle/lightning_logs/candidates/"
+model_name = "gcp-resnext50-20200520-173446"
 paths = [Path(base + model_name + '/fold_' + str(i)) for i in range(1, 6)]
 paths = [list(path.glob('*.ckpt'))[0] for path in paths]
 print(paths)

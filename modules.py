@@ -131,15 +131,15 @@ class AttentionPoolHead(nn.Module):
 
     def __init__(self, c_in, c_out, n_tiles):
         super().__init__()
-        self.maxpool = nn.AdaptiveMaxPool2d(output_size=(1, 1))
-        self.lin_key = nn.Linear(c_in, c_in//2)
-        self.lin_w = nn.Linear(c_in//2, 1)
+        self.maxpool = AdaptiveConcatPool2d()
+        self.lin_key = nn.Linear(c_in * 2, c_in // 2)
+        self.lin_w = nn.Linear(c_in // 2, 1)
         self.n_tiles = n_tiles
-        self.fc = nn.Sequential(nn.Dropout(0.3),
-                                nn.Linear(c_in, 512),
+        self.fc = nn.Sequential(nn.Dropout(0.5),
+                                nn.Linear(c_in * 2, 512),
                                 Mish(),
                                 nn.BatchNorm1d(512),
-                                nn.Dropout(0.3),
+                                nn.Dropout(0.5),
                                 nn.Linear(512, c_out))
 
     def forward(self, x):
@@ -149,7 +149,7 @@ class AttentionPoolHead(nn.Module):
         weights = self.lin_w(torch.tanh(keys))
         weights = weights.reshape(-1, self.n_tiles)
         weights = torch.softmax(weights, dim=1).unsqueeze(2)  # b, n, 1
-        h = h.reshape(-1, self.n_tiles, c)
+        h = h.reshape(-1, self.n_tiles, c * 2)
         h = h.transpose(1, 2)
         pooled = torch.matmul(h, weights).squeeze(2)
         return self.fc(pooled)

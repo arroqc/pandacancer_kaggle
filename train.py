@@ -73,12 +73,12 @@ class LightModel(pl.LightningModule):
 
     def train_dataloader(self):
         train_dl = tdata.DataLoader(self.trainset, batch_size=BATCH_SIZE, shuffle=True,
-                                    num_workers=min(6, os.cpu_count()))
+                                    num_workers=self.hparams.num_workers)
         return train_dl
 
     def val_dataloader(self):
         val_dl = tdata.DataLoader(self.valset, batch_size=BATCH_SIZE, shuffle=False,
-                                  num_workers=min(6, os.cpu_count()))
+                                  num_workers=self.hparams.num_workers)
         return [val_dl]
 
     def cross_entropy_loss(self, logits, gt):
@@ -178,6 +178,7 @@ if __name__ == '__main__':
     SEED = 33
     BATCH_SIZE = 16
     PRECISION = 32
+    NUM_WORKERS = 6
 
     hparams = {'backbone': 'resnext50_semi',
                'head': 'attention_pool',
@@ -190,10 +191,11 @@ if __name__ == '__main__':
                'weight_decay': False,
                'pretrained': True,
                'use_opt': True,
-               'opt_fit': 'train',
+               'opt_fit': 'val',
                'tiles_data_augmentation': False,
                'reg_loss': 'mse',
                'opt_algo': 'over9000',
+               'num_workers': NUM_WORKERS,
                'step_size': 8/EPOCHS}
 
     LEVEL = hparams['level']
@@ -210,7 +212,6 @@ if __name__ == '__main__':
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
     df_train = pd.read_csv(CSV_PATH)
-    df_train = df_train[~(df_train['image_id'].isin(['8d90013d52788c1e2f5f47ad80e65d48']))]  # Todo: ISSUE FOR STACKING !
     kfold = StratifiedKFold(n_splits=5, random_state=SEED, shuffle=True)
     splits = kfold.split(df_train, df_train['isup_grade'])
     with open(f'{ROOT_PATH}/stats_{SIZE}_{LEVEL}.pkl', 'rb') as file:
@@ -269,3 +270,6 @@ if __name__ == '__main__':
 # RandomTileDataset
 # Max/avg pool per tile then self attention.
 # Use both level 1 and level 2
+
+# Multi head attention pool.
+# Tree method on the pooled representation
