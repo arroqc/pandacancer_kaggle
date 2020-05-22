@@ -5,9 +5,11 @@ from pathlib import Path
 import pickle
 
 
-base = "C:/Users/Necka/PycharmProjects\panda/pandacancer_kaggle/lightning_logs/candidates/"
-model_name = "gcp-resnext50-20200520-173446"
-paths = [Path(base + model_name + '/fold_' + str(i)) for i in range(1, 6)]
+#base = "C:/Users/Necka/PycharmProjects\panda/pandacancer_kaggle/lightning_logs/candidates/"
+base = "D:/lightning_logs/lightning_logs/"
+model_name = "resnext50-20200522-031606"
+n_folds = 2
+paths = [Path(base + model_name + '/fold_' + str(i)) for i in range(1, n_folds + 1)]
 paths = [list(path.glob('*.ckpt'))[0] for path in paths]
 print(paths)
 

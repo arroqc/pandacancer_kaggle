@@ -98,7 +98,9 @@ class TileMaker:
 
         all_tiles = np.concatenate([s0, s1, s2, s3], axis=0)
         # Find the images with the most stuff (the most red):
-        sorted_tiles = np.argsort(np.sum(all_tiles, axis=(1, 2, 3)))
+        red_channel = all_tiles[:, :, :, 0]
+        tissue = np.where((red_channel < 230) & (red_channel > 200), red_channel, 0)
+        sorted_tiles = np.argsort(np.sum(tissue, axis=(1, 2)))[::-1]
         sorted_tiles = sorted_tiles[:self.number * 4]
 
         return all_tiles[sorted_tiles], _
@@ -138,7 +140,9 @@ class TileMaker:
         image, mask = self.__pad(image, mask)
         image, mask = self.__get_tiles(image, mask)
         # Find the images with the most dark (epithelium) stuff
-        sorted_tiles = np.argsort(np.sum(image, axis=(1, 2, 3)))
+        red_channel = image[:, :, :, 0]
+        tissue = np.where((red_channel < 230) & (red_channel > 200), red_channel, 0)
+        sorted_tiles = np.argsort(np.sum(tissue, axis=(1, 2)))[::-1]
         sorted_tiles = sorted_tiles[:self.number]
 
         return image[sorted_tiles], mask[sorted_tiles]
@@ -160,8 +164,12 @@ for i, img_fn in enumerate(img_list):
     img_id = img_fn.stem
     mask_fn = MASKS_TRAIN_PATH / (img_id + '_mask.tiff')
 
-    col = skimage.io.MultiImage(str(img_fn))
-    image = col[-LEVEL]
+    try:
+        col = skimage.io.MultiImage(str(img_fn))
+        image = col[-LEVEL]
+    except:
+        bad_images.append(img_id)
+        continue
 
     if img_id in pen_marked_images:
         image, _, _ = remove_pen_marks(image)

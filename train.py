@@ -13,6 +13,7 @@ import torchvision.transforms as transforms
 import pytorch_lightning as pl
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import cohen_kappa_score
+from sklearn.metrics import confusion_matrix
 
 from contribs.torch_utils import split_weights, FlatCosineAnnealingLR
 from contribs.fancy_optimizers import Over9000
@@ -21,6 +22,21 @@ from datasets import TileDataset
 from modules import Model
 from utils import dict_to_args
 from data_augmentation import AlbumentationTransform, TilesCompose, TilesRandomDuplicate, TilesRandomRemove
+import seaborn as sn
+import matplotlib.pyplot as plt
+import io
+from PIL import Image
+
+
+def convert_to_image(cm):
+    df_cm = pd.DataFrame(cm, index=[i for i in "012345"],
+                         columns=[i for i in "012345"])
+    plt.figure(figsize=(10, 7))
+    sns_plot = sn.heatmap(df_cm, annot=True)
+    buf = io.BytesIO()
+    sns_plot.get_figure().savefig(buf)
+    cm_image = np.array(Image.open(buf).resize((512, 512)))[:, :, :3]
+    return cm_image
 
 
 parser = argparse.ArgumentParser()
@@ -146,12 +162,13 @@ class LightModel(pl.LightningModule):
             preds = logits.squeeze(1)
         else:
             preds = logits.argmax(1)
-        return {'val_loss': loss, 'preds': preds, 'gt': batch['isup']}
+        return {'val_loss': loss, 'preds': preds, 'gt': batch['isup'], 'provider': batch['provider']}
 
     def validation_epoch_end(self, outputs):
         avg_loss = torch.cat([out['val_loss'] for out in outputs], dim=0).mean()
         preds = torch.cat([out['preds'] for out in outputs], dim=0)
         gt = torch.cat([out['gt'] for out in outputs], dim=0)
+        provider = np.concatenate([out['provider'] for out in outputs], axis=0)
         preds = preds.detach().cpu().numpy()
         gt = gt.detach().cpu().numpy()
 
@@ -165,10 +182,35 @@ class LightModel(pl.LightningModule):
                 preds = np.round(preds)
 
         kappa = cohen_kappa_score(preds, gt, weights='quadratic')
-        print(f'Epoch {self.current_epoch}: {avg_loss:.2f}, kappa: {kappa:.4f}')
-        kappa = torch.tensor(kappa)
-        tensorboard_logs = {'val_loss': avg_loss, 'kappa': kappa}
+        cm = confusion_matrix(gt, preds)
+        print('CM')
+        print(cm)
+        cm_radboud = confusion_matrix(gt[provider == 'radboud'], preds[provider == 'radboud'])
+        cm_karolinska = confusion_matrix(gt[provider == 'karolinska'], preds[provider == 'karolinska'])
 
+        kappa_radboud = cohen_kappa_score(gt[provider == 'radboud'],
+                                          preds[provider == 'radboud'],
+                                          weights='quadratic')
+        kappa_karolinska = cohen_kappa_score(gt[provider == 'karolinska'],
+                                             preds[provider == 'karolinska'],
+                                             weights='quadratic')
+        cm_image = convert_to_image(cm)
+        self.logger.experiment.add_image('CM', cm_image, self.global_step, dataformats='HWC')
+        cm_image = convert_to_image(cm_radboud)
+        self.logger.experiment.add_image('CM Radboud', cm_image, self.global_step, dataformats='HWC')
+        cm_image = convert_to_image(cm_karolinska)
+        self.logger.experiment.add_image('CM Karolinska', cm_image, self.global_step, dataformats='HWC')
+        print(f'Epoch {self.current_epoch}: {avg_loss:.2f}, kappa: {kappa:.4f}')
+        print('CM radboud')
+        print(cm_radboud)
+        print('kappa radboud:', kappa_radboud)
+        print('CM karolinska')
+        print(cm_karolinska)
+        print('kappa karolinska:', kappa_karolinska)
+
+        kappa = torch.tensor(kappa)
+        tensorboard_logs = {'val_loss': avg_loss, 'kappa': kappa, 'kappa_radboud': kappa_radboud,
+                            'kappa_karolinska': kappa_karolinska}
         return {'avg_val_loss': avg_loss, 'log': tensorboard_logs}
 
 
@@ -176,18 +218,18 @@ if __name__ == '__main__':
 
     EPOCHS = 30
     SEED = 33
-    BATCH_SIZE = 16
+    BATCH_SIZE = 6
     PRECISION = 32
     NUM_WORKERS = 6
 
     hparams = {'backbone': 'resnext50_semi',
-               'head': 'attention_pool',
+               'head': 'basic',
                'lr_head': 1e-3,
                'lr_backbone': 1e-4,
-               'n_tiles': 12,
-               'level': 1,
+               'n_tiles': 32,
+               'level': 2,
                'tile_size': 128,
-               'task': 'regression',
+               'task': 'classification',
                'weight_decay': False,
                'pretrained': True,
                'use_opt': True,
@@ -232,8 +274,9 @@ if __name__ == '__main__':
         trainer = pl.Trainer(gpus=[0], max_nb_epochs=EPOCHS, auto_lr_find=False,
                              gradient_clip_val=1,
                              logger=tb_logger,
-                             accumulate_grad_batches=1,              # BatchNorm ?
+                             accumulate_grad_batches=2,              # BatchNorm ?
                              checkpoint_callback=checkpoint_callback,
+                             nb_sanity_val_steps=0,
                              precision=PRECISION
                              )
         # lr_finder = trainer.lr_find(model)
@@ -241,25 +284,40 @@ if __name__ == '__main__':
         # fig.savefig('lr_plot.png')
         trainer.fit(model)
 
-        if hparams['use_opt']:
-            print(model.opt.coefficients())
-            with open(f'{OUTPUT_DIR}/{NAME}-{date}/fold{fold + 1}_coef.pkl', 'wb') as file:
-                pickle.dump(file=file, obj=list(np.sort(model.opt.coefficients())))
-
         # Fold predictions
+        from pathlib import Path
+        print('Load best checkpoint')
+        ckpt = list(Path(tb_logger.log_dir).glob('*.ckpt'))[0]
+        model.load_from_checkpoint(str(ckpt), val_idx=val_idx, provider_stats=provider_stats,
+                                   hparams=dict_to_args(hparams))
         torch_model = model.model.eval().to('cuda')
         preds = []
+        gt = []
         with torch.no_grad():
             for batch in model.val_dataloader()[0]:
                 image = batch['image'].to('cuda')
                 pred = torch_model(image)
+                gt.append(batch['isup'])
                 preds.append(pred)
         preds = torch.cat(preds, dim=0).squeeze(1).detach().cpu().numpy()
-        pd.DataFrame({'val_idx': val_idx, 'preds': preds}).to_csv(
-            f'{OUTPUT_DIR}/{NAME}-{date}/fold{fold + 1}_preds.csv', index=False)
+        gt = torch.cat(gt, dim=0).detach().cpu().numpy()
+        if hparams['task'] == 'classification':
+            pd.DataFrame({'val_idx': val_idx, 'preds0': preds[:, 0], 'preds1': preds[:, 1], 'preds2': preds[:, 2],
+                          'preds3': preds[:, 3], 'preds4': preds[:, 4], 'preds5': preds[:, 5], 'gt': gt}).to_csv(
+                f'{OUTPUT_DIR}/{NAME}-{date}/fold{fold + 1}_preds.csv', index=False)
+        else:
+            pd.DataFrame({'val_idx': val_idx, 'preds': preds, 'gt': gt}).to_csv(
+                f'{OUTPUT_DIR}/{NAME}-{date}/fold{fold + 1}_preds.csv', index=False)
+
+        if hparams['use_opt'] and hparams['opt_fit'] == 'val' and hparams['task'] == 'regression':
+            opt = OptimizedRounder_v2(6)
+            opt.fit(preds, gt)
+            print(opt.coefficients())
+            with open(f'{OUTPUT_DIR}/{NAME}-{date}/fold{fold + 1}_coef.pkl', 'wb') as file:
+                pickle.dump(file=file, obj=list(np.sort(opt.coefficients())))
 
         # Todo: One fold training
-        # break
+        break
 
 # Tests to do:
 # L1Smooth (small improvement)
