@@ -23,9 +23,9 @@ SCALE = 1
 STRIDE = False
 TRAIN_PATH = BASE_PATH/'train_images/'
 MASKS_TRAIN_PATH = BASE_PATH/'train_label_masks/'
-OUTPUT_IMG_PATH = OUTPUT_BASE/f'train_tiles_{SIZE}_{LEVEL}/imgs/'
-OUTPUT_MASK_PATH = OUTPUT_BASE/f'train_tiles_{SIZE}_{LEVEL}/masks/'
-PICKLE_NAME = OUTPUT_BASE/f'stats_{SIZE}_{LEVEL}.pkl'
+OUTPUT_IMG_PATH = OUTPUT_BASE/f'train_tiles_{SIZE}_{LEVEL}_{SCALE}/imgs/'
+OUTPUT_MASK_PATH = OUTPUT_BASE/f'train_tiles_{SIZE}_{LEVEL}_{SCALE}/masks/'
+PICKLE_NAME = OUTPUT_BASE/f'stats_{SIZE}_{LEVEL}_{SCALE}.pkl'
 CSV_PATH = BASE_PATH/'train.csv'
 
 
