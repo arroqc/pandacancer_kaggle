@@ -18,7 +18,7 @@ from sklearn.metrics import confusion_matrix
 from contribs.torch_utils import split_weights, FlatCosineAnnealingLR
 from contribs.fancy_optimizers import Over9000
 from contribs.kappa_rounder import OptimizedRounder_v2
-from datasets import TileDataset
+from datasets import TileDataset, RandomTileDataset
 from modules import Model
 from utils import dict_to_args
 from data_augmentation import AlbumentationTransform, TilesCompose, TilesRandomDuplicate, TilesRandomRemove
@@ -81,9 +81,12 @@ class LightModel(pl.LightningModule):
         if self.hparams.tiles_data_augmentation:
             tiles_transform = TilesCompose([TilesRandomRemove(p=0.7, num=4),
                                             TilesRandomDuplicate(p=0.7, num=4)])
-
-        self.trainset = TileDataset(TRAIN_PATH, df_train.iloc[self.train_idx], num_tiles=self.hparams.n_tiles, transform=transform_train,
-                                    normalize_stats=self.provider_stats, tiles_transform=tiles_transform)
+        if self.hparams.randomset:
+            self.trainset = RandomTileDataset(TRAIN_PATH, df_train.iloc[self.train_idx], num_tiles=self.hparams.n_tiles, value_df=values, transform=transform_train,
+                                              normalize_stats=self.provider_stats, tiles_transform=tiles_transform)
+        else:
+            self.trainset = TileDataset(TRAIN_PATH, df_train.iloc[self.train_idx], num_tiles=self.hparams.n_tiles, transform=transform_train,
+                                        normalize_stats=self.provider_stats, tiles_transform=tiles_transform)
         self.valset = TileDataset(TRAIN_PATH, df_train.iloc[self.val_idx], num_tiles=self.hparams.n_tiles, transform=transform_test,
                                   normalize_stats=self.provider_stats)
 
@@ -125,12 +128,12 @@ class LightModel(pl.LightningModule):
                       dict(params=params_head, lr=self.hparams.lr_head)]
 
         if self.hparams.opt_algo == 'over9000':
-            optimizer = Over9000(params, weight_decay=3e-6)
+            optimizer = Over9000(params, weight_decay=1e-5)
             scheduler = FlatCosineAnnealingLR(optimizer, max_iter=EPOCHS, step_size=self.hparams.step_size)
             return [optimizer], [scheduler]
 
         elif self.hparams.opt_algo == 'adam':
-            optimizer = torch.optim.Adam(params, weight_decay=3e-6)
+            optimizer = torch.optim.Adam(params, weight_decay=1e-5)
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=3, factor=0.5)
             return [optimizer], [scheduler]
 
@@ -207,7 +210,7 @@ class LightModel(pl.LightningModule):
         print('CM karolinska')
         print(cm_karolinska)
         print('kappa karolinska:', kappa_karolinska)
-
+        plt.close('all')
         kappa = torch.tensor(kappa)
         tensorboard_logs = {'val_loss': avg_loss, 'kappa': kappa, 'kappa_radboud': kappa_radboud,
                             'kappa_karolinska': kappa_karolinska}
@@ -233,7 +236,8 @@ if __name__ == '__main__':
                'weight_decay': False,
                'pretrained': True,
                'use_opt': True,
-               'opt_fit': 'val',
+               'opt_fit': 'train',
+               'randomset': False,
                'tiles_data_augmentation': False,
                'reg_loss': 'mse',
                'opt_algo': 'over9000',
@@ -255,10 +259,10 @@ if __name__ == '__main__':
     torch.backends.cudnn.benchmark = True
     df_train = pd.read_csv(CSV_PATH)
     kfold = StratifiedKFold(n_splits=5, random_state=SEED, shuffle=True)
-    splits = kfold.split(df_train, df_train['isup_grade'])
+    splits = kfold.split(df_train, df_train['isup_grade'].astype(str) + df_train['data_provider'])
     with open(f'{ROOT_PATH}/stats_{SIZE}_{LEVEL}.pkl', 'rb') as file:
         provider_stats = pickle.load(file)
-    # values = pd.read_csv(f'{ROOT_PATH}/files_{SIZE}_{LEVEL}.csv')
+    values = pd.read_csv(f'{ROOT_PATH}/files_{SIZE}_{LEVEL}.csv')
 
     date = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
     for fold, (train_idx, val_idx) in enumerate(splits):
@@ -274,7 +278,7 @@ if __name__ == '__main__':
         trainer = pl.Trainer(gpus=[0], max_nb_epochs=EPOCHS, auto_lr_find=False,
                              gradient_clip_val=1,
                              logger=tb_logger,
-                             accumulate_grad_batches=2,              # BatchNorm ?
+                             accumulate_grad_batches=3,              # BatchNorm ?
                              checkpoint_callback=checkpoint_callback,
                              nb_sanity_val_steps=0,
                              precision=PRECISION
@@ -317,7 +321,6 @@ if __name__ == '__main__':
                 pickle.dump(file=file, obj=list(np.sort(opt.coefficients())))
 
         # Todo: One fold training
-        break
 
 # Tests to do:
 # L1Smooth (small improvement)

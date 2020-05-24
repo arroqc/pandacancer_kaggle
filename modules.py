@@ -187,13 +187,17 @@ class AttentionPoolHead(nn.Module):
                                 nn.Dropout(0.5),
                                 nn.Linear(512, c_out))
 
-    def forward(self, x):
-        bn, c, h, w = x.shape
-        h = self.maxpool(x).squeeze(2).squeeze(2)  # bn, c
-        keys = self.lin_key(h)
+    def compute_attention(self, x):
+        keys = self.lin_key(x)
         weights = self.lin_w(torch.tanh(keys))
         weights = weights.reshape(-1, self.n_tiles)
         weights = torch.softmax(weights, dim=1).unsqueeze(2)  # b, n, 1
+        return weights
+
+    def forward(self, x):
+        bn, c, h, w = x.shape
+        h = self.maxpool(x).squeeze(2).squeeze(2)  # bn, c
+        weights = self.compute_attention(h)
         h = h.reshape(-1, self.n_tiles, c * 2)
         h = h.transpose(1, 2)
         pooled = torch.matmul(h, weights).squeeze(2)

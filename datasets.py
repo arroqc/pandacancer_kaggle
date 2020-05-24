@@ -45,7 +45,8 @@ class TileDataset(tdata.Dataset):
                 # image = self.normalize_stats['all'](image)
             image_tiles.append(image)
 
-        image_tiles = torch.stack(image_tiles, dim=0)
+        if torch.is_tensor(image_tiles[0]):
+            image_tiles = torch.stack(image_tiles, dim=0)
 
         if self.tiles_transform is not None:
             image_tiles = self.tiles_transform(image_tiles)
@@ -79,7 +80,7 @@ class RandomTileDataset(tdata.Dataset):
     def __getitem__(self, idx):
         img_id = self.img_list[idx]
         vals = self.value_df[self.value_df['image_id'] == img_id]
-        tile_sample = vals.sample(self.num_tiles, weights=vals['value'])['filename']
+        tile_sample = vals.sample(self.num_tiles, weights=vals['value'] + 1e-4)['filename']
         tiles = [str(self.img_path / tile_fn) for tile_fn in tile_sample]
         metadata = self.df.iloc[idx]
         image_tiles = []

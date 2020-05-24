@@ -19,6 +19,7 @@ OUTPUT_BASE = Path(args.out_dir)
 SIZE = 128
 NUM = 16
 LEVEL = 1
+SCALE = 1
 STRIDE = False
 TRAIN_PATH = BASE_PATH/'train_images/'
 MASKS_TRAIN_PATH = BASE_PATH/'train_label_masks/'
@@ -79,9 +80,10 @@ def remove_pen_marks(img):
 
 class TileMaker:
 
-    def __init__(self, size, number):
+    def __init__(self, size, number, scale):
         self.size = size
         self.number = number
+        self.scale = scale
 
     def make_multistride(self, image, mask):
         # Pad only once
@@ -97,7 +99,7 @@ class TileMaker:
                                  image[self.size // 2:-self.size // 2, self.size // 2:-self.size // 2])
 
         all_tiles = np.concatenate([s0, s1, s2, s3], axis=0)
-        # Find the images with the most stuff (the most red):
+        # Find the images with the most stuff:
         sorted_tiles = np.argsort(np.sum(all_tiles, axis=(1, 2, 3)))
         sorted_tiles = sorted_tiles[:self.number * 4]
 
@@ -135,6 +137,13 @@ class TileMaker:
         return image, mask
 
     def make(self, image, mask):
+
+        if self.scale != 1:
+            h, w, _ = image.shape
+            new_h, new_w = int(h * self.scale), int(w * self.scale)
+            image = cv2.resize(image, (new_h, new_w))
+            mask = cv2.resize(mask, (new_h, new_w))
+
         image, mask = self.__pad(image, mask)
         image, mask = self.__get_tiles(image, mask)
         # Find the images with the most dark (epithelium) stuff
@@ -147,7 +156,7 @@ class TileMaker:
 OUTPUT_IMG_PATH.mkdir(exist_ok=True, parents=True)
 OUTPUT_MASK_PATH.mkdir(exist_ok=True, parents=True)
 
-tile_maker = TileMaker(SIZE, NUM)
+tile_maker = TileMaker(SIZE, NUM, SCALE)
 
 img_list = list(TRAIN_PATH.glob('**/*.tiff'))
 # img_list.pop(5765)
