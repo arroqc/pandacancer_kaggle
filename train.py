@@ -220,7 +220,7 @@ class LightModel(pl.LightningModule):
 if __name__ == '__main__':
 
     EPOCHS = 30
-    SEED = 33
+    SEED = 2020
     BATCH_SIZE = 6
     PRECISION = 32
     NUM_WORKERS = 6
@@ -232,7 +232,7 @@ if __name__ == '__main__':
                'n_tiles': 32,
                'level': 2,
                'tile_size': 128,
-               'task': 'classification',
+               'task': 'regression',
                'weight_decay': False,
                'pretrained': True,
                'use_opt': True,
