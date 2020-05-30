@@ -134,7 +134,9 @@ class LightModel(pl.LightningModule):
 
         elif self.hparams.opt_algo == 'adam':
             optimizer = torch.optim.Adam(params, weight_decay=1e-5)
-            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=3, factor=0.5)
+            scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=3e-3, final_div_factor=1000,
+                                                            total_steps=EPOCHS)
+            #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=3, factor=0.5)
             return [optimizer], [scheduler]
 
     def training_step(self, batch, batch_idx):
@@ -220,7 +222,7 @@ class LightModel(pl.LightningModule):
 if __name__ == '__main__':
 
     EPOCHS = 30
-    SEED = 2020
+    SEED = 33
     BATCH_SIZE = 6
     PRECISION = 32
     NUM_WORKERS = 6
@@ -236,7 +238,7 @@ if __name__ == '__main__':
                'weight_decay': False,
                'pretrained': True,
                'use_opt': True,
-               'opt_fit': 'train',
+               'opt_fit': 'val',
                'randomset': False,
                'tiles_data_augmentation': False,
                'reg_loss': 'mse',
@@ -276,12 +278,12 @@ if __name__ == '__main__':
 
         model = LightModel(train_idx, val_idx, provider_stats, dict_to_args(hparams))
         trainer = pl.Trainer(gpus=[0], max_nb_epochs=EPOCHS, auto_lr_find=False,
-                             gradient_clip_val=1,
+                             gradient_clip_val=0.5,
                              logger=tb_logger,
-                             accumulate_grad_batches=3,              # BatchNorm ?
+                             accumulate_grad_batches=1,              # BatchNorm ?
                              checkpoint_callback=checkpoint_callback,
                              nb_sanity_val_steps=0,
-                             precision=PRECISION
+                             precision=PRECISION,
                              )
         # lr_finder = trainer.lr_find(model)
         # fig = lr_finder.plot(suggest=True)

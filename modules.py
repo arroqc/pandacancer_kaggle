@@ -31,6 +31,9 @@ class Model(nn.Module):
         elif backbone == 'resnet50':
             m = models.resnet50(pretrained=True)
             remove_range = 2
+        elif backbone == 'resnet34':
+            m = models.resnet34(pretrained=True)
+            remove_range = 2
         elif backbone == 'densenet121':
             m = models.densenet121(pretrained=True)
             remove_range = 1
