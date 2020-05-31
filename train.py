@@ -249,9 +249,10 @@ if __name__ == '__main__':
     LEVEL = hparams['level']
     SIZE = hparams['tile_size']
     TRAIN_PATH = ROOT_PATH + f'/train_tiles_{SIZE}_{LEVEL}/imgs/'
-    CSV_PATH = ROOT_PATH + '/train.csv'
+    CSV_PATH = './train.csv'  # This will include folds
     NAME = 'resnext50'
     OUTPUT_DIR = './lightning_logs'
+
     random.seed(SEED)
     os.environ['PYTHONHASHSEED'] = str(SEED)
     np.random.seed(SEED)
@@ -259,9 +260,18 @@ if __name__ == '__main__':
     torch.cuda.manual_seed(SEED)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
+
     df_train = pd.read_csv(CSV_PATH)
-    kfold = StratifiedKFold(n_splits=5, random_state=SEED, shuffle=True)
-    splits = kfold.split(df_train, df_train['isup_grade'].astype(str) + df_train['data_provider'])
+    #kfold = StratifiedKFold(n_splits=5, random_state=SEED, shuffle=True)
+    #splits = kfold.split(df_train, df_train['isup_grade'].astype(str) + df_train['data_provider'])
+
+    fold_n = df_train['fold'].max()
+    splits = []
+    for i in range(0, fold_n + 1):
+        train_idx = np.where(df_train['fold'] != i)
+        val_idx = np.where(df_train['fold'] == i)
+        splits.append((train_idx, val_idx))
+
     with open(f'{ROOT_PATH}/stats_{SIZE}_{LEVEL}.pkl', 'rb') as file:
         provider_stats = pickle.load(file)
     values = pd.read_csv(f'{ROOT_PATH}/files_{SIZE}_{LEVEL}.csv')
