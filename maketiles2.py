@@ -18,13 +18,15 @@ def trim_background(image):
     morphed = cv2.morphologyEx(threshed, cv2.MORPH_CLOSE, kernel)
 
     ## (3) Find the max-area contour
-    cnts = cv2.findContours(morphed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
-    cnt = sorted(cnts, key=cv2.contourArea)[-1]
-
-    ## (4) Crop and save it
-    x,y,w,h = cv2.boundingRect(cnt)
-    dst = image[y:y+h, x:x+w]
-    return dst
+    try:
+        cnts = cv2.findContours(morphed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
+        cnt = sorted(cnts, key=cv2.contourArea)[-1]
+        ## (4) Crop and save it
+        x, y, w, h = cv2.boundingRect(cnt)
+        dst = image[y:y + h, x:x + w]
+        return dst
+    except:
+        return image
 
 
 def remove_pen_marks(img):
@@ -361,4 +363,4 @@ if __name__ == '__main__':
         image_stats = pd.DataFrame(image_stats)
         image_stats.to_csv(OUTPUT_BASE/f'imagestats_{SIZE}_{LEVEL}.csv', index=False)
     tiles_stats = pd.DataFrame(tiles_stats)
-    tiles_stats.to_csv(OUTPUT_BASE/f'tilesstats_{SIZE}_{LEVEL}.csv', index=False)
+    tiles_stats.to_csv(OUTPUT_BASE/f'tilesstats_{SIZE}_{LEVEL}_{str(SETS[0])}.csv', index=False)
