@@ -228,7 +228,7 @@ if __name__ == '__main__':
     NUM_WORKERS = 6
 
     hparams = {'backbone': 'resnext50_semi',
-               'head': 'basic',
+               'head': 'basic',  # Max + attention concat
                'lr_head': 1e-3,
                'lr_backbone': 1e-4,
                'n_tiles': 32,
