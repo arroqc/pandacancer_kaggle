@@ -269,8 +269,8 @@ if __name__ == '__main__':
     splits = []
     for i in range(0, fold_n + 1):
         train_idx = np.where(df_train['fold'] != i)
-        val_idx = np.where(df_train['fold'] == i)
-        splits.append((train_idx, val_idx))
+        val_idx = np.where(df_train['fold'] == i)[0]
+        splits.append((train_idx, val_idx))[0]
 
     with open(f'{ROOT_PATH}/stats_{SIZE}_{LEVEL}.pkl', 'rb') as file:
         provider_stats = pickle.load(file)
