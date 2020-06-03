@@ -16,9 +16,9 @@ from sklearn.metrics import cohen_kappa_score
 from sklearn.metrics import confusion_matrix
 
 from contribs.torch_utils import split_weights, FlatCosineAnnealingLR
-from contribs.fancy_optimizers import Over9000
+from contribs.fancy_optimizers import Over9000, Ranger
 from contribs.kappa_rounder import OptimizedRounder_v2
-from datasets import TileDataset, RandomTileDataset
+from datasets import TileDataset
 from modules import Model
 from utils import dict_to_args
 from data_augmentation import AlbumentationTransform, TilesCompose, TilesRandomDuplicate, TilesRandomRemove
@@ -39,15 +39,9 @@ def convert_to_image(cm):
     return cm_image
 
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--root_dir", default='D:/Datasets/panda', required=False)
-args = parser.parse_args()
-ROOT_PATH = args.root_dir
-
-
 class LightModel(pl.LightningModule):
 
-    def __init__(self, train_idx, val_idx, provider_stats, hparams):
+    def __init__(self, train_idx, val_idx, hparams):
         super().__init__()
         self.train_idx = train_idx
         self.val_idx = val_idx
@@ -63,7 +57,6 @@ class LightModel(pl.LightningModule):
                            backbone=hparams.backbone,
                            head=hparams.head)
 
-        self.provider_stats = provider_stats
         self.hparams = hparams
         self.opt = None
         self.trainset = None
@@ -81,17 +74,23 @@ class LightModel(pl.LightningModule):
         if self.hparams.tiles_data_augmentation:
             tiles_transform = TilesCompose([TilesRandomRemove(p=0.7, num=4),
                                             TilesRandomDuplicate(p=0.7, num=4)])
-        if self.hparams.randomset:
-            self.trainset = RandomTileDataset(TRAIN_PATH, df_train.iloc[self.train_idx], num_tiles=self.hparams.n_tiles, value_df=values, transform=transform_train,
-                                              normalize_stats=self.provider_stats, tiles_transform=tiles_transform)
-        else:
-            self.trainset = TileDataset(TRAIN_PATH, df_train.iloc[self.train_idx], num_tiles=self.hparams.n_tiles, transform=transform_train,
-                                        normalize_stats=self.provider_stats, tiles_transform=tiles_transform)
-        self.valset = TileDataset(TRAIN_PATH, df_train.iloc[self.val_idx], num_tiles=self.hparams.n_tiles, transform=transform_test,
-                                  normalize_stats=self.provider_stats)
+
+        self.trainsets = [TileDataset(TRAIN_PATH + '0/', df_train.iloc[self.train_idx], suffix='',
+                                     num_tiles=self.hparams.n_tiles, transform=transform_train,
+                                      tiles_transform=tiles_transform)]
+
+        self.trainsets += [TileDataset(TRAIN_PATH + f'{i}/', df_train.iloc[self.train_idx], suffix=f'_{i}',
+                                       num_tiles=self.hparams.n_tiles, transform=transform_train,
+                                       tiles_transform=tiles_transform) for i in range(1, 16)]
+
+        self.valset = TileDataset(TRAIN_PATH, df_train.iloc[self.val_idx], suffix='', num_tiles=self.hparams.n_tiles,
+                                  transform=transform_test)
 
     def train_dataloader(self):
-        train_dl = tdata.DataLoader(self.trainset, batch_size=BATCH_SIZE, shuffle=True,
+        rand_dataset = np.random.randint(0, len(self.trainsets))
+        #rand_dataset = 0
+        print('Using dataset', rand_dataset)
+        train_dl = tdata.DataLoader(self.trainsets[rand_dataset], batch_size=BATCH_SIZE, shuffle=True,
                                     num_workers=self.hparams.num_workers)
         return train_dl
 
@@ -126,6 +125,11 @@ class LightModel(pl.LightningModule):
             params_head = self.model.head.parameters()
             params = [dict(params=params_backbone, lr=self.hparams.lr_backbone),
                       dict(params=params_head, lr=self.hparams.lr_head)]
+
+        if self.hparams.opt_algo == 'ranger':
+            optimizer = Ranger(params, weight_decay=1e-5)
+            scheduler = FlatCosineAnnealingLR(optimizer, max_iter=EPOCHS, step_size=0.75)
+            return [optimizer], [scheduler]
 
         if self.hparams.opt_algo == 'over9000':
             optimizer = Over9000(params, weight_decay=1e-5)
@@ -221,34 +225,42 @@ class LightModel(pl.LightningModule):
 
 if __name__ == '__main__':
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--root_dir", default='H:/', required=False)
+    args = parser.parse_args()
+    ROOT_PATH = args.root_dir
+
     EPOCHS = 30
     SEED = 33
-    BATCH_SIZE = 6
-    PRECISION = 32
-    NUM_WORKERS = 6
+    BATCH_SIZE = 16
+    PRECISION = 16
+    NUM_WORKERS = 8
 
-    hparams = {'backbone': 'resnext50_semi',
-               'head': 'basic',  # Max + attention concat
+
+    hparams = {'backbone': 'resnext50_swsl',
+               'head': 'basic',  # Max + attention concat ?
                'lr_head': 1e-3,
-               'lr_backbone': 1e-4,
+               'lr_backbone': 3e-5,
                'n_tiles': 32,
                'level': 2,
-               'tile_size': 128,
+               'scale': 1,
+               'tile_size': 224,
                'task': 'regression',
                'weight_decay': False,
                'pretrained': True,
                'use_opt': True,
                'opt_fit': 'val',
-               'randomset': False,
                'tiles_data_augmentation': False,
                'reg_loss': 'mse',
-               'opt_algo': 'over9000',
+               'opt_algo': 'ranger',
                'num_workers': NUM_WORKERS,
-               'step_size': 8/EPOCHS}
+               'step_size': 0.75}
 
     LEVEL = hparams['level']
     SIZE = hparams['tile_size']
-    TRAIN_PATH = ROOT_PATH + f'/train_tiles_{SIZE}_{LEVEL}/imgs/'
+    SCALE = hparams['scale']
+
+    TRAIN_PATH = ROOT_PATH + f'/train_tiles_{SIZE}_{LEVEL}_{int(SCALE*10)}/'
     CSV_PATH = './train.csv'  # This will include folds
     NAME = 'resnext50'
     OUTPUT_DIR = './lightning_logs'
@@ -268,13 +280,13 @@ if __name__ == '__main__':
     fold_n = df_train['fold'].max()
     splits = []
     for i in range(0, fold_n + 1):
-        train_idx = np.where(df_train['fold'] != i)
+        train_idx = np.where(df_train['fold'] != i)[0]
         val_idx = np.where(df_train['fold'] == i)[0]
-        splits.append((train_idx, val_idx))[0]
+        splits.append((train_idx, val_idx))
 
-    with open(f'{ROOT_PATH}/stats_{SIZE}_{LEVEL}.pkl', 'rb') as file:
-        provider_stats = pickle.load(file)
-    values = pd.read_csv(f'{ROOT_PATH}/files_{SIZE}_{LEVEL}.csv')
+    # with open(f'{ROOT_PATH}/stats_{SIZE}_{LEVEL}.pkl', 'rb') as file:
+    #     provider_stats = pickle.load(file)
+    # values = pd.read_csv(f'{ROOT_PATH}/files_{SIZE}_{LEVEL}.csv')
 
     date = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
     for fold, (train_idx, val_idx) in enumerate(splits):
@@ -286,7 +298,7 @@ if __name__ == '__main__':
         checkpoint_callback = pl.callbacks.ModelCheckpoint(filepath=tb_logger.log_dir + "/{epoch:02d}-{kappa:.4f}",
                                                            monitor='kappa', mode='max')
 
-        model = LightModel(train_idx, val_idx, provider_stats, dict_to_args(hparams))
+        model = LightModel(train_idx, val_idx, dict_to_args(hparams))
         trainer = pl.Trainer(gpus=[0], max_nb_epochs=EPOCHS, auto_lr_find=False,
                              gradient_clip_val=0.5,
                              logger=tb_logger,
@@ -294,6 +306,7 @@ if __name__ == '__main__':
                              checkpoint_callback=checkpoint_callback,
                              nb_sanity_val_steps=0,
                              precision=PRECISION,
+                             reload_dataloaders_every_epoch=True
                              )
         # lr_finder = trainer.lr_find(model)
         # fig = lr_finder.plot(suggest=True)
@@ -304,8 +317,7 @@ if __name__ == '__main__':
         from pathlib import Path
         print('Load best checkpoint')
         ckpt = list(Path(tb_logger.log_dir).glob('*.ckpt'))[0]
-        model.load_from_checkpoint(str(ckpt), val_idx=val_idx, provider_stats=provider_stats,
-                                   hparams=dict_to_args(hparams))
+        model.load_from_checkpoint(str(ckpt), val_idx=val_idx, hparams=dict_to_args(hparams))
         torch_model = model.model.eval().to('cuda')
         preds = []
         gt = []
@@ -333,6 +345,7 @@ if __name__ == '__main__':
                 pickle.dump(file=file, obj=list(np.sort(opt.coefficients())))
 
         # Todo: One fold training
+        break
 
 # Tests to do:
 # L1Smooth (small improvement)

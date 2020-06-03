@@ -134,8 +134,8 @@ def rotate_image(mat, angle):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base_dir", default='G:/Datasets/panda', required=False)
-    parser.add_argument("--out_dir", default='D:/Datasets/panda', required=False)
+    parser.add_argument("--base_dir", default='H:/', required=False)
+    parser.add_argument("--out_dir", default='H:/', required=False)
     parser.add_argument("--size", required=True, type=int)
     parser.add_argument("--num", required=True, type=int)
     parser.add_argument("--level", required=True, type=int)
@@ -217,6 +217,22 @@ if __name__ == '__main__':
             # Normal images
             tiles = tile_maker(image)
             tiles_stats += save_to_disk(tiles, img_id, prefix='', suffix='')
+
+        if 6 in SETS:
+            # Flip vertical
+            image_tr = cv2.flip(image, 0)
+            tiles = tile_maker(image_tr)
+            tiles_stats += save_to_disk(tiles, img_id, prefix='', suffix='_16')
+
+            # Flip Horizontal
+            image_tr = cv2.flip(image, 1)
+            tiles = tile_maker(image_tr)
+            tiles_stats += save_to_disk(tiles, img_id, prefix='', suffix='_17')
+
+            # Flip Both
+            image_tr = cv2.flip(image, -1)
+            tiles = tile_maker(image_tr)
+            tiles_stats += save_to_disk(tiles, img_id, prefix='', suffix='_18')
 
         if 1 in SETS:
             # Stride right

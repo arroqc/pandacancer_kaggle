@@ -23,10 +23,23 @@ class Flatten(nn.Module):
 
 class Model(nn.Module):
 
-    def __init__(self, c_out=6, n_tiles=12, tile_size=128, backbone='resnext50_semi', head='basic', **kwargs):
+    def __init__(self, c_out=6, n_tiles=12, tile_size=128, backbone='resnext50_swsl', head='basic', **kwargs):
         super().__init__()
         if backbone == 'resnext50_semi':
             m = torch.hub.load('facebookresearch/semi-supervised-ImageNet1K-models', 'resnext50_32x4d_ssl')
+            remove_range = 2
+        elif backbone == 'efficientb0':
+            from efficientnet_pytorch import EfficientNet
+            m = EfficientNet.from_pretrained('efficientnet-b0', advprop=True, num_classes=c_out, in_channels=3)
+            remove_range = 5
+        elif backbone == 'resnet18_swsl':
+            m = torch.hub.load('facebookresearch/semi-supervised-ImageNet1K-models', 'resnet18_swsl')
+            remove_range = 2
+        elif backbone == 'resnext50_swsl':
+            m = torch.hub.load('facebookresearch/semi-supervised-ImageNet1K-models', 'resnext50_32x4d_swsl')
+            remove_range = 2
+        elif backbone == 'resnext101_swsl':
+            m = torch.hub.load('facebookresearch/semi-supervised-ImageNet1K-models', 'resnext101_32x16d_swsl')
             remove_range = 2
         elif backbone == 'resnet50':
             m = models.resnet50(pretrained=True)
@@ -40,6 +53,7 @@ class Model(nn.Module):
 
         c_feature = list(m.children())[-1].in_features
         self.feature_extractor = nn.Sequential(*list(m.children())[:-remove_range])
+
         self.n_tiles = n_tiles
         self.tile_size = tile_size
         if head == 'basic':
@@ -183,7 +197,9 @@ class AttentionPoolHead(nn.Module):
         self.lin_key = nn.Linear(c_in * 2, c_in // 2)
         self.lin_w = nn.Linear(c_in // 2, 1)
         self.n_tiles = n_tiles
+        self.max = nn.AdaptiveMaxPool2d(output_size=(1, 1))
         self.fc = nn.Sequential(nn.Dropout(0.5),
+                                # nn.Linear(c_in * 3, 512),
                                 nn.Linear(c_in * 2, 512),
                                 Mish(),
                                 nn.BatchNorm1d(512),
@@ -198,10 +214,16 @@ class AttentionPoolHead(nn.Module):
         return weights
 
     def forward(self, x):
-        bn, c, h, w = x.shape
+        bn, c, height, width = x.shape
         h = self.maxpool(x).squeeze(2).squeeze(2)  # bn, c
         weights = self.compute_attention(h)
         h = h.reshape(-1, self.n_tiles, c * 2)
         h = h.transpose(1, 2)
         pooled = torch.matmul(h, weights).squeeze(2)
+
+        # h = x.view(-1, self.n_tiles, c, height, width).permute(0, 2, 1, 3, 4) \
+        #     .contiguous().view(-1, c, height * self.n_tiles, width)
+        # maxpooled = self.max(h).squeeze(2).squeeze(2)
+        # pooled = torch.cat([pooled, maxpooled], dim=1)
+
         return self.fc(pooled)
