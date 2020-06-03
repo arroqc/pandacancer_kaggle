@@ -83,7 +83,7 @@ class LightModel(pl.LightningModule):
                                        num_tiles=self.hparams.n_tiles, transform=transform_train,
                                        tiles_transform=tiles_transform) for i in range(1, 16)]
 
-        self.valset = TileDataset(TRAIN_PATH, df_train.iloc[self.val_idx], suffix='', num_tiles=self.hparams.n_tiles,
+        self.valset = TileDataset(TRAIN_PATH + '0/', df_train.iloc[self.val_idx], suffix='', num_tiles=self.hparams.n_tiles,
                                   transform=transform_test)
 
     def train_dataloader(self):
@@ -232,15 +232,15 @@ if __name__ == '__main__':
 
     EPOCHS = 30
     SEED = 33
-    BATCH_SIZE = 16
+    BATCH_SIZE = 6
     PRECISION = 16
     NUM_WORKERS = 8
 
 
-    hparams = {'backbone': 'resnext50_swsl',
+    hparams = {'backbone': 'resnext50_semi',
                'head': 'basic',  # Max + attention concat ?
                'lr_head': 1e-3,
-               'lr_backbone': 3e-5,
+               'lr_backbone': 1e-4,
                'n_tiles': 32,
                'level': 2,
                'scale': 1,
@@ -252,7 +252,7 @@ if __name__ == '__main__':
                'opt_fit': 'val',
                'tiles_data_augmentation': False,
                'reg_loss': 'mse',
-               'opt_algo': 'ranger',
+               'opt_algo': 'over9000',
                'num_workers': NUM_WORKERS,
                'step_size': 0.75}
 
