@@ -260,7 +260,7 @@ if __name__ == '__main__':
     SIZE = hparams['tile_size']
     SCALE = hparams['scale']
 
-    TRAIN_PATH = ROOT_PATH + f'/train_tiles_{SIZE}_{LEVEL}_{int(SCALE*10)}/'
+    TRAIN_PATH = ROOT_PATH + f'/train_tiles_{SIZE}_{LEVEL}_{int(SCALE*10)}/imgs/'
     CSV_PATH = './train.csv'  # This will include folds
     NAME = 'resnext50'
     OUTPUT_DIR = './lightning_logs'
