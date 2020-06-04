@@ -41,6 +41,7 @@ class EfficientModel(nn.Module):
         h = x.view(-1, 3, self.tile_size, self.tile_size)
         h = self.feature_extractor(h)
         bn, c = h.shape
+        print(h.shape)
         h = h.view(-1, self.n_tiles, c, 1, 1).permute(0, 2, 1, 3, 4).contiguous().view(-1, c, 1 * self.n_tiles, 1)
         h = self.head(h)
 
