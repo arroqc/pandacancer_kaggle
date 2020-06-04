@@ -21,17 +21,40 @@ class Flatten(nn.Module):
         return x.view(x.shape[0], -1)
 
 
-class Model(nn.Module):
+class EfficientModel(nn.Module):
+
+    def __init__(self, c_out=6, n_tiles=12, tile_size=128, name='efficientnet-b0', **kwargs):
+        super().__init__()
+
+        from efficientnet_pytorch import EfficientNet
+        m = EfficientNet.from_pretrained(name, advprop=True, num_classes=c_out, in_channels=3)
+        c_feature = m._fc.in_features
+        m._fc = nn.Identity()
+        self.feature_extractor = m
+        self.n_tiles = n_tiles
+        self.tile_size = tile_size
+
+        self.head = nn.Sequential(AdaptiveConcatPool2d(),
+                                  nn.Linear(c_feature, c_out))
+
+    def forward(self, x):
+        h = x.view(-1, 3, self.tile_size, self.tile_size)
+        h = self.feature_extractor(h)
+        bn, c = h.shape
+        h = h.view(-1, self.n_tiles, c, 1, 1).permute(0, 2, 1, 3, 4).contiguous().view(-1, c, 1 * self.n_tiles, 1)
+        h = self.head(h)
+
+        return h
+
+
+class ResnetModel(nn.Module):
 
     def __init__(self, c_out=6, n_tiles=12, tile_size=128, backbone='resnext50_swsl', head='basic', **kwargs):
         super().__init__()
+        remove_range = 0
         if backbone == 'resnext50_semi':
             m = torch.hub.load('facebookresearch/semi-supervised-ImageNet1K-models', 'resnext50_32x4d_ssl')
             remove_range = 2
-        elif backbone == 'efficientb0':
-            from efficientnet_pytorch import EfficientNet
-            m = EfficientNet.from_pretrained('efficientnet-b0', advprop=True, num_classes=c_out, in_channels=3)
-            remove_range = 5
         elif backbone == 'resnet18_swsl':
             m = torch.hub.load('facebookresearch/semi-supervised-ImageNet1K-models', 'resnet18_swsl')
             remove_range = 2

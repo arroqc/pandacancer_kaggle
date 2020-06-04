@@ -19,7 +19,7 @@ from contribs.torch_utils import split_weights, FlatCosineAnnealingLR
 from contribs.fancy_optimizers import Over9000, Ranger
 from contribs.kappa_rounder import OptimizedRounder_v2
 from datasets import TileDataset
-from modules import Model
+from modules import ResnetModel, EfficientModel
 from utils import dict_to_args
 from data_augmentation import AlbumentationTransform, TilesCompose, TilesRandomDuplicate, TilesRandomRemove
 import seaborn as sn
@@ -53,11 +53,18 @@ class LightModel(pl.LightningModule):
         else:
             c_out = 6
 
-        self.model = Model(c_out=c_out,
-                           n_tiles=hparams.n_tiles,
-                           tile_size=hparams.tile_size,
-                           backbone=hparams.backbone,
-                           head=hparams.head)
+        if 'efficient' in hparams.backbone:
+            self.model = EfficientModel(c_out=c_out,
+                                        n_tiles=hparams.n_tiles,
+                                        tile_size=hparams.tile_size,
+                                        name=hparams.backbone
+                                        )
+        else:
+            self.model = ResnetModel(c_out=c_out,
+                                     n_tiles=hparams.n_tiles,
+                                     tile_size=hparams.tile_size,
+                                     backbone=hparams.backbone,
+                                     head=hparams.head)
 
         self.hparams = hparams
         self.opt = None
@@ -251,10 +258,9 @@ if __name__ == '__main__':
     PRECISION = 16
     NUM_WORKERS = 8
 
-
-    hparams = {'backbone': 'resnext50_semi',
+    hparams = {'backbone': 'efficientnet-b0',
                'head': 'basic',  # Max + attention concat ?
-               'lr_head': 1e-3,
+               'lr_head': 3e-4,
                'lr_backbone': 3e-4,
                'n_tiles': 32,
                'level': 2,
