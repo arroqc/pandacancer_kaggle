@@ -7,10 +7,11 @@ from pathlib import Path
 
 class TileDataset(tdata.Dataset):
 
-    def __init__(self, img_path, dataframe, num_tiles, suffix, transform=None, tiles_transform=None):
+    def __init__(self, img_path, dataframe, num_tiles, suffix, transform=None, tiles_transform=None, one_hot=False):
 
         self.suffix = suffix
         self.img_path = Path(img_path)
+        self.one_hot = one_hot
         self.df = dataframe
         self.num_tiles = num_tiles
         self.img_list = self.df['image_id'].values
@@ -44,8 +45,23 @@ class TileDataset(tdata.Dataset):
         if self.tiles_transform is not None:
             image_tiles = self.tiles_transform(image_tiles)
 
+        isup = metadata['isup_grade']
+        if self.one_hot:
+            if isup == 0:
+                isup = torch.tensor([0, 0, 0, 0, 0], dtype=torch.float32)
+            elif isup == 1:
+                isup = torch.tensor([1, 0, 0, 0, 0], dtype=torch.float32)
+            elif isup == 2:
+                isup = torch.tensor([1, 1, 0, 0, 0], dtype=torch.float32)
+            elif isup == 3:
+                isup = torch.tensor([1, 1, 1, 0, 0], dtype=torch.float32)
+            elif isup == 4:
+                isup = torch.tensor([1, 1, 1, 1, 0], dtype=torch.float32)
+            elif isup == 5:
+                isup = torch.tensor([1, 1, 1, 1, 1], dtype=torch.float32)
+
         return {'image': image_tiles, 'provider': metadata['data_provider'],
-                'isup': metadata['isup_grade'], 'gleason': metadata['gleason_score']}
+                'isup': isup, 'gleason': metadata['gleason_score']}
 
     def __len__(self):
         return len(self.img_list)

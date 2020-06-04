@@ -76,19 +76,21 @@ class LightModel(pl.LightningModule):
                                             TilesRandomDuplicate(p=0.7, num=4)])
 
         self.trainsets = [TileDataset(TRAIN_PATH + '0/', df_train.iloc[self.train_idx], suffix='',
-                                     num_tiles=self.hparams.n_tiles, transform=transform_train,
+                                      one_hot=True,
+                                      num_tiles=self.hparams.n_tiles, transform=transform_train,
                                       tiles_transform=tiles_transform)]
 
         self.trainsets += [TileDataset(TRAIN_PATH + f'{i}/', df_train.iloc[self.train_idx], suffix=f'_{i}',
+                                       one_hot=True,
                                        num_tiles=self.hparams.n_tiles, transform=transform_train,
                                        tiles_transform=tiles_transform) for i in range(1, 16)]
 
         self.valset = TileDataset(TRAIN_PATH + '0/', df_train.iloc[self.val_idx], suffix='', num_tiles=self.hparams.n_tiles,
+                                  one_hot=True,
                                   transform=transform_test)
 
     def train_dataloader(self):
         rand_dataset = np.random.randint(0, len(self.trainsets))
-        #rand_dataset = 0
         print('Using dataset', rand_dataset)
         train_dl = tdata.DataLoader(self.trainsets[rand_dataset], batch_size=BATCH_SIZE, shuffle=True,
                                     num_workers=self.hparams.num_workers)
@@ -106,6 +108,8 @@ class LightModel(pl.LightningModule):
             elif self.hparams.reg_loss == 'smooth_l1':
                 loss_fn = nn.SmoothL1Loss()
             gt = gt.unsqueeze(1).float()
+        elif self.hparams.task == 'bce':
+            loss_fn = nn.BCEWithLogitsLoss()
         else:
             loss_fn = nn.CrossEntropyLoss()
         return loss_fn(logits, gt)
@@ -148,6 +152,8 @@ class LightModel(pl.LightningModule):
         loss = self.cross_entropy_loss(logits, batch['isup']).unsqueeze(0)
         if self.hparams.task == 'regression':
             preds = logits.squeeze(1)
+        elif self.hparams.task == 'bce':
+            preds = logits.sigmoid().sum(1)
         else:
             preds = logits.argmax(1)
         return {'loss': loss, 'preds': preds, 'gt': batch['isup'], 'log': {'train_loss': loss}}
@@ -169,6 +175,8 @@ class LightModel(pl.LightningModule):
         loss = self.cross_entropy_loss(logits, batch['isup']).unsqueeze(0)
         if self.hparams.task == 'regression':
             preds = logits.squeeze(1)
+        elif self.hparams.task == 'bce':
+            preds = logits.sigmoid().sum(1)
         else:
             preds = logits.argmax(1)
         return {'val_loss': loss, 'preds': preds, 'gt': batch['isup'], 'provider': batch['provider']}
@@ -189,6 +197,8 @@ class LightModel(pl.LightningModule):
                 preds = self.opt.predict(preds)
             else:
                 preds = np.round(preds)
+        elif self.hparams.task == 'bce':
+            preds = np.round(preds)
 
         kappa = cohen_kappa_score(preds, gt, weights='quadratic')
         cm = confusion_matrix(gt, preds)
@@ -317,7 +327,7 @@ if __name__ == '__main__':
         from pathlib import Path
         print('Load best checkpoint')
         ckpt = list(Path(tb_logger.log_dir).glob('*.ckpt'))[0]
-        model.load_from_checkpoint(str(ckpt), val_idx=val_idx, hparams=dict_to_args(hparams))
+        model.load_from_checkpoint(str(ckpt), train_idx=train_idx, val_idx=val_idx, hparams=dict_to_args(hparams))
         torch_model = model.model.eval().to('cuda')
         preds = []
         gt = []

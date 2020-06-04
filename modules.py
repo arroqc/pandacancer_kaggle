@@ -106,11 +106,11 @@ class SelfAttendedHead(nn.Module):
         self.n_tiles = n_tiles
         self.fc = nn.Sequential(AdaptiveConcatPool2d(),
                                 Flatten(),
-                                nn.Dropout(0.5),
+                                nn.Dropout(0.3),
                                 nn.Linear(512 * 2, 512),
                                 Mish(),
                                 nn.BatchNorm1d(512),
-                                nn.Dropout(0.5),
+                                nn.Dropout(0.3),
                                 nn.Linear(512, c_out))
 
     def forward(self, x):
