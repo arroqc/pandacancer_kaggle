@@ -169,7 +169,7 @@ class LightModel(pl.LightningModule):
         if self.hparams.task == 'regression' and self.hparams.opt_fit == 'train':
             self.opt = OptimizedRounder_v2(6)
             self.opt.fit(preds, gt)
-        elif self.hparams.task = 'bce':
+        elif self.hparams.task == 'bce':
             gt = gt.sum(1)
 
         return {}
