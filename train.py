@@ -48,6 +48,8 @@ class LightModel(pl.LightningModule):
 
         if hparams.task == 'regression':
             c_out = 1
+        elif hparams.task == 'bce':
+            c_out = 5
         else:
             c_out = 6
 
