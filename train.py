@@ -169,6 +169,8 @@ class LightModel(pl.LightningModule):
         if self.hparams.task == 'regression' and self.hparams.opt_fit == 'train':
             self.opt = OptimizedRounder_v2(6)
             self.opt.fit(preds, gt)
+        elif self.hparams.task = 'bce':
+            gt = gt.sum(1)
 
         return {}
 
@@ -201,6 +203,7 @@ class LightModel(pl.LightningModule):
                 preds = np.round(preds)
         elif self.hparams.task == 'bce':
             preds = np.round(preds)
+            gt = gt.sum(1)
 
         kappa = cohen_kappa_score(preds, gt, weights='quadratic')
         cm = confusion_matrix(gt, preds)
@@ -252,12 +255,12 @@ if __name__ == '__main__':
     hparams = {'backbone': 'resnext50_semi',
                'head': 'basic',  # Max + attention concat ?
                'lr_head': 1e-3,
-               'lr_backbone': 1e-4,
+               'lr_backbone': 3e-4,
                'n_tiles': 32,
                'level': 2,
                'scale': 1,
                'tile_size': 224,
-               'task': 'regression',
+               'task': 'bce',
                'weight_decay': False,
                'pretrained': True,
                'use_opt': True,
