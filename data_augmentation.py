@@ -23,7 +23,7 @@ class AlbumentationTransform:
 #     ], p=p)
 
 
-def strong_aug(p=0.7):
+def strong_aug(p=1):
     return Compose([
         HorizontalFlip(p=0.5),
         VerticalFlip(p=0.5),

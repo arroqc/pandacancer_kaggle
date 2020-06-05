@@ -34,16 +34,23 @@ class EfficientModel(nn.Module):
         self.n_tiles = n_tiles
         self.tile_size = tile_size
 
-        self.head = nn.Sequential(AdaptiveConcatPool2d(),
-                                  Flatten(),
-                                  nn.Linear(c_feature * 2, c_out))
+        # self.head = nn.Sequential(AdaptiveConcatPool2d(),
+        #                           Flatten(),
+        #                           nn.Linear(c_feature * 2, c_out))
+        self.max_pool = nn.Sequential(nn.AdaptiveMaxPool2d(output_size=(1, 1)), Flatten)
+        self.attention_pool = AttentionPool(c_feature, c_feature//4)
+        self.lin_out = nn.Linear(c_feature * 2, c_out)
 
     def forward(self, x):
         h = x.view(-1, 3, self.tile_size, self.tile_size)
         h = self.feature_extractor(h)
         bn, c = h.shape
-        h = h.view(-1, self.n_tiles, c, 1, 1).permute(0, 2, 1, 3, 4).contiguous().view(-1, c, 1 * self.n_tiles, 1)
-        h = self.head(h)
+        #h = h.view(-1, self.n_tiles, c, 1, 1).permute(0, 2, 1, 3, 4).contiguous().view(-1, c, 1 * self.n_tiles, 1)
+        #h = self.head(h)
+
+        a = self.max_pool(h.view(-1, self.n_tiles, c, 1, 1).permute(0, 2, 1, 3, 4).contiguous().view(-1, c, 1 * self.n_tiles, 1))
+        b = self.attention_pool(h.view(-1, self.n_tiles, c))
+        h = self.lin_out(torch.cat([a, b], dim=1))
 
         return h
 

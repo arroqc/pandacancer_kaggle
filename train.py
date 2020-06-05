@@ -252,7 +252,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     ROOT_PATH = args.root_dir
 
-    EPOCHS = 30
+    EPOCHS = 50
     SEED = 33
     BATCH_SIZE = 6
     PRECISION = 16
@@ -353,6 +353,9 @@ if __name__ == '__main__':
         if hparams['task'] == 'classification':
             pd.DataFrame({'val_idx': val_idx, 'preds0': preds[:, 0], 'preds1': preds[:, 1], 'preds2': preds[:, 2],
                           'preds3': preds[:, 3], 'preds4': preds[:, 4], 'preds5': preds[:, 5], 'gt': gt}).to_csv(
+                f'{OUTPUT_DIR}/{NAME}-{date}/fold{fold + 1}_preds.csv', index=False)
+        elif hparams['task'] == 'bce':
+            pd.DataFrame({'val_idx': val_idx, 'preds': preds.sum(1), 'gt': gt.sum(1)}).to_csv(
                 f'{OUTPUT_DIR}/{NAME}-{date}/fold{fold + 1}_preds.csv', index=False)
         else:
             pd.DataFrame({'val_idx': val_idx, 'preds': preds, 'gt': gt}).to_csv(
