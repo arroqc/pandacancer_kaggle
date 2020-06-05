@@ -37,7 +37,7 @@ class EfficientModel(nn.Module):
         # self.head = nn.Sequential(AdaptiveConcatPool2d(),
         #                           Flatten(),
         #                           nn.Linear(c_feature * 2, c_out))
-        self.max_pool = nn.Sequential(nn.AdaptiveMaxPool2d(output_size=(1, 1)), Flatten)
+        self.max_pool = nn.Sequential(nn.AdaptiveMaxPool2d(output_size=(1, 1)), Flatten())
         self.attention_pool = AttentionPool(c_feature, c_feature//4)
         self.lin_out = nn.Linear(c_feature * 2, c_out)
 
