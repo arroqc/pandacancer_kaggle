@@ -21,6 +21,23 @@ class Flatten(nn.Module):
         return x.view(x.shape[0], -1)
 
 
+class EfficientHeadPool(nn.Module):
+
+    def __init__(self, c_in, c_out, n_tiles):
+        super().__init__()
+        self.max_pool = nn.Sequential(nn.AdaptiveMaxPool2d(output_size=(1, 1)), Flatten())
+        self.attention_pool = AttentionPool(c_in, c_in//4)
+        self.lin_out = nn.Linear(c_in * 2, c_out)
+        self.n_tiles = n_tiles
+
+    def forward(self, h):
+        bn, c = h.shape
+        a = self.max_pool(h.view(-1, self.n_tiles, c, 1, 1).permute(0, 2, 1, 3, 4).contiguous().view(-1, c, 1 * self.n_tiles, 1))
+        b = self.attention_pool(h.view(-1, self.n_tiles, c))
+        h = self.lin_out(torch.cat([a, b], dim=1))
+        return h
+
+
 class EfficientModel(nn.Module):
 
     def __init__(self, c_out=6, n_tiles=12, tile_size=128, name='efficientnet-b0', **kwargs):
@@ -37,9 +54,7 @@ class EfficientModel(nn.Module):
         # self.head = nn.Sequential(AdaptiveConcatPool2d(),
         #                           Flatten(),
         #                           nn.Linear(c_feature * 2, c_out))
-        self.max_pool = nn.Sequential(nn.AdaptiveMaxPool2d(output_size=(1, 1)), Flatten())
-        self.attention_pool = AttentionPool(c_feature, c_feature//4)
-        self.lin_out = nn.Linear(c_feature * 2, c_out)
+        self.head = EfficientHeadPool(c_feature, c_out, n_tiles)
 
     def forward(self, x):
         h = x.view(-1, 3, self.tile_size, self.tile_size)
@@ -47,11 +62,7 @@ class EfficientModel(nn.Module):
         bn, c = h.shape
         #h = h.view(-1, self.n_tiles, c, 1, 1).permute(0, 2, 1, 3, 4).contiguous().view(-1, c, 1 * self.n_tiles, 1)
         #h = self.head(h)
-
-        a = self.max_pool(h.view(-1, self.n_tiles, c, 1, 1).permute(0, 2, 1, 3, 4).contiguous().view(-1, c, 1 * self.n_tiles, 1))
-        b = self.attention_pool(h.view(-1, self.n_tiles, c))
-        h = self.lin_out(torch.cat([a, b], dim=1))
-
+        h = self.head(h)
         return h
 
 
