@@ -18,8 +18,8 @@ from sklearn.metrics import confusion_matrix
 from contribs.torch_utils import split_weights, FlatCosineAnnealingLR
 from contribs.fancy_optimizers import Over9000, Ranger
 from contribs.kappa_rounder import OptimizedRounder_v2
-from datasets import TileDataset
-from modules import ResnetModel, EfficientModel
+from datasets import TileDataset, SquareDataset
+from modules import ResnetModel, EfficientModel, EfficientModelSquare
 from utils import dict_to_args
 from data_augmentation import AlbumentationTransform, TilesCompose, TilesRandomDuplicate, TilesRandomRemove
 import seaborn as sn
@@ -54,12 +54,17 @@ class LightModel(pl.LightningModule):
             c_out = 6
 
         if 'efficient' in hparams.backbone:
-            self.model = EfficientModel(c_out=c_out,
-                                        n_tiles=hparams.n_tiles,
-                                        tile_size=hparams.tile_size,
-                                        name=hparams.backbone,
-                                        head=hparams.head
-                                        )
+            # self.model = EfficientModel(c_out=c_out,
+            #                             n_tiles=hparams.n_tiles,
+            #                             tile_size=hparams.tile_size,
+            #                             name=hparams.backbone,
+            #                             head=hparams.head
+            #                             )
+            self.model = EfficientModelSquare(c_out=c_out,
+                                            n_tiles=hparams.n_tiles,
+                                            tile_size=hparams.tile_size,
+                                            name=hparams.backbone,
+                                            head=hparams.head)
         else:
             self.model = ResnetModel(c_out=c_out,
                                      n_tiles=hparams.n_tiles,
@@ -85,19 +90,37 @@ class LightModel(pl.LightningModule):
             tiles_transform = TilesCompose([TilesRandomRemove(p=0.7, num=4),
                                             TilesRandomDuplicate(p=0.7, num=4)])
 
-        self.trainsets = [TileDataset(TRAIN_PATH + '0/', df_train.iloc[self.train_idx], suffix='',
+        # self.trainsets = [TileDataset(TRAIN_PATH + '0/', df_train.iloc[self.train_idx], suffix='',
+        #                               one_hot=True,
+        #                               num_tiles=self.hparams.n_tiles, transform=transform_train,
+        #                               tiles_transform=tiles_transform)]
+        #
+        # self.trainsets += [TileDataset(TRAIN_PATH + f'{i}/', df_train.iloc[self.train_idx], suffix=f'_{i}',
+        #                                one_hot=True,
+        #                                num_tiles=self.hparams.n_tiles, transform=transform_train,
+        #                                tiles_transform=tiles_transform) for i in range(1, 16)]
+        #
+        # self.valset = TileDataset(TRAIN_PATH + '0/', df_train.iloc[self.val_idx], suffix='', num_tiles=self.hparams.n_tiles,
+        #                           one_hot=True,
+        #                           transform=transform_test)
+        import albumentations
+        transforms_train = albumentations.Compose([
+            albumentations.Transpose(p=0.5),
+            albumentations.VerticalFlip(p=0.5),
+            albumentations.HorizontalFlip(p=0.5),
+        ])
+        transforms_val = albumentations.Compose([])
+        self.trainsets = [SquareDataset(TRAIN_PATH + '0/', df_train.iloc[self.train_idx], suffix='',
                                       one_hot=True,
-                                      num_tiles=self.hparams.n_tiles, transform=transform_train,
-                                      tiles_transform=tiles_transform)]
+                                      num_tiles=self.hparams.n_tiles, transform=transforms_train)]
 
-        self.trainsets += [TileDataset(TRAIN_PATH + f'{i}/', df_train.iloc[self.train_idx], suffix=f'_{i}',
+        self.trainsets += [SquareDataset(TRAIN_PATH + f'{i}/', df_train.iloc[self.train_idx], suffix=f'_{i}',
                                        one_hot=True,
-                                       num_tiles=self.hparams.n_tiles, transform=transform_train,
-                                       tiles_transform=tiles_transform) for i in range(1, 16)]
+                                       num_tiles=self.hparams.n_tiles, transform=transforms_train) for i in range(1, 16)]
 
-        self.valset = TileDataset(TRAIN_PATH + '0/', df_train.iloc[self.val_idx], suffix='', num_tiles=self.hparams.n_tiles,
+        self.valset = SquareDataset(TRAIN_PATH + '0/', df_train.iloc[self.val_idx], suffix='', num_tiles=self.hparams.n_tiles,
                                   one_hot=True,
-                                  transform=transform_test)
+                                  transform=transforms_val)
 
     def train_dataloader(self):
         rand_dataset = np.random.randint(0, len(self.trainsets))
@@ -152,8 +175,8 @@ class LightModel(pl.LightningModule):
 
         elif self.hparams.opt_algo == 'adam':
             optimizer = torch.optim.Adam(params, weight_decay=1e-5)
-            scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=3e-3, final_div_factor=1000,
-                                                            total_steps=EPOCHS)
+            scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=3e-4, final_div_factor=1000,
+                                                            total_steps=EPOCHS, pct_start=0.1)
             #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=3, factor=0.5)
             return [optimizer], [scheduler]
 

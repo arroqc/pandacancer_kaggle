@@ -71,6 +71,28 @@ class EfficientModel(nn.Module):
         return h
 
 
+class EfficientModelSquare(nn.Module):
+
+    def __init__(self, c_out=6, n_tiles=12, tile_size=128, name='efficientnet-b0', head='basic', **kwargs):
+        super().__init__()
+
+        from efficientnet_pytorch import EfficientNet
+        m = EfficientNet.from_pretrained(name, advprop=True, num_classes=c_out, in_channels=3)
+        c_feature = m._fc.in_features
+        m._fc = nn.Identity()
+        self.feature_extractor = m
+        self.n_tiles = n_tiles
+        self.tile_size = tile_size
+        self.head_type = head
+
+        self.head = nn.Linear(c_feature, c_out)
+
+    def forward(self, x):
+        h = self.feature_extractor(x)
+        h = self.head(h)
+        return h
+
+
 class ResnetModel(nn.Module):
 
     def __init__(self, c_out=6, n_tiles=12, tile_size=128, backbone='resnext50_swsl', head='basic', **kwargs):
