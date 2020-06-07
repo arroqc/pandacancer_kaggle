@@ -40,7 +40,7 @@ class EfficientHeadPool(nn.Module):
 
 class EfficientModel(nn.Module):
 
-    def __init__(self, c_out=6, n_tiles=12, tile_size=128, name='efficientnet-b0', **kwargs):
+    def __init__(self, c_out=6, n_tiles=12, tile_size=128, name='efficientnet-b0', head='basic', **kwargs):
         super().__init__()
 
         from efficientnet_pytorch import EfficientNet
@@ -50,19 +50,24 @@ class EfficientModel(nn.Module):
         self.feature_extractor = m
         self.n_tiles = n_tiles
         self.tile_size = tile_size
+        self.head_type = head
 
-        # self.head = nn.Sequential(AdaptiveConcatPool2d(),
-        #                           Flatten(),
-        #                           nn.Linear(c_feature * 2, c_out))
-        self.head = EfficientHeadPool(c_feature, c_out, n_tiles)
+        if head == 'basic':
+            self.head = nn.Sequential(AdaptiveConcatPool2d(),
+                                      Flatten(),
+                                      nn.Linear(c_feature * 2, c_out))
+        elif head == 'attention_pool':
+            self.head = EfficientHeadPool(c_feature, c_out, n_tiles)
 
     def forward(self, x):
         h = x.view(-1, 3, self.tile_size, self.tile_size)
         h = self.feature_extractor(h)
         bn, c = h.shape
-        #h = h.view(-1, self.n_tiles, c, 1, 1).permute(0, 2, 1, 3, 4).contiguous().view(-1, c, 1 * self.n_tiles, 1)
-        #h = self.head(h)
-        h = self.head(h)
+        if self.head_type == 'basic':
+            h = h.view(-1, self.n_tiles, c, 1, 1).permute(0, 2, 1, 3, 4).contiguous().view(-1, c, 1 * self.n_tiles, 1)
+            h = self.head(h)
+        elif self.head_type == 'attention_pool':
+            h = self.head(h)
         return h
 
 

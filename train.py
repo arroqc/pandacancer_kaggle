@@ -41,7 +41,7 @@ def convert_to_image(cm):
 
 class LightModel(pl.LightningModule):
 
-    def __init__(self, train_idx, val_idx, hparams):
+    def __init__(self, hparams, train_idx, val_idx):
         super().__init__()
         self.train_idx = train_idx
         self.val_idx = val_idx
@@ -57,7 +57,8 @@ class LightModel(pl.LightningModule):
             self.model = EfficientModel(c_out=c_out,
                                         n_tiles=hparams.n_tiles,
                                         tile_size=hparams.tile_size,
-                                        name=hparams.backbone
+                                        name=hparams.backbone,
+                                        head=hparams.head
                                         )
         else:
             self.model = ResnetModel(c_out=c_out,
@@ -141,7 +142,7 @@ class LightModel(pl.LightningModule):
 
         if self.hparams.opt_algo == 'ranger':
             optimizer = Ranger(params, weight_decay=1e-5)
-            scheduler = FlatCosineAnnealingLR(optimizer, max_iter=EPOCHS, step_size=0.75)
+            scheduler = FlatCosineAnnealingLR(optimizer, max_iter=EPOCHS, step_size=self.hparams.step_size)
             return [optimizer], [scheduler]
 
         if self.hparams.opt_algo == 'over9000':
@@ -253,19 +254,24 @@ if __name__ == '__main__':
     ROOT_PATH = args.root_dir
 
     EPOCHS = 50
-    SEED = 33
-    BATCH_SIZE = 6
+    SEED = 2020
+    BATCH_SIZE = 8
     PRECISION = 16
     NUM_WORKERS = 8
 
     hparams = {'backbone': 'efficientnet-b0',
                'head': 'basic',  # Max + attention concat ?
+
                'lr_head': 3e-4,
                'lr_backbone': 3e-4,
+
                'n_tiles': 32,
                'level': 2,
                'scale': 1,
                'tile_size': 224,
+               'num_workers': NUM_WORKERS,
+               'batch_size': BATCH_SIZE,
+
                'task': 'bce',
                'weight_decay': False,
                'pretrained': True,
@@ -274,8 +280,7 @@ if __name__ == '__main__':
                'tiles_data_augmentation': False,
                'reg_loss': 'mse',
                'opt_algo': 'over9000',
-               'num_workers': NUM_WORKERS,
-               'step_size': 0.75}
+               'step_size': 0.6}
 
     LEVEL = hparams['level']
     SIZE = hparams['tile_size']
@@ -319,7 +324,7 @@ if __name__ == '__main__':
         checkpoint_callback = pl.callbacks.ModelCheckpoint(filepath=tb_logger.log_dir + "/{epoch:02d}-{kappa:.4f}",
                                                            monitor='kappa', mode='max')
 
-        model = LightModel(train_idx, val_idx, dict_to_args(hparams))
+        model = LightModel(dict_to_args(hparams), train_idx, val_idx)
         trainer = pl.Trainer(gpus=[0], max_nb_epochs=EPOCHS, auto_lr_find=False,
                              gradient_clip_val=0.5,
                              logger=tb_logger,
@@ -346,6 +351,8 @@ if __name__ == '__main__':
             for batch in model.val_dataloader()[0]:
                 image = batch['image'].to('cuda')
                 pred = torch_model(image)
+                if hparams['task'] == 'bce':
+                    pred = torch.sigmoid(pred)
                 gt.append(batch['isup'])
                 preds.append(pred)
         preds = torch.cat(preds, dim=0).squeeze(1).detach().cpu().numpy()

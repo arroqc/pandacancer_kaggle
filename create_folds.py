@@ -3,11 +3,11 @@ from sklearn.model_selection import StratifiedKFold
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--root_dir", default='D:/Datasets/panda', required=False)
+parser.add_argument("--root_dir", default='H:/', required=False)
 args = parser.parse_args()
 ROOT_PATH = args.root_dir
 CSV_PATH = ROOT_PATH + '/train.csv'
-SEED = 33
+SEED = 2020
 df_train = pd.read_csv(CSV_PATH)
 kfold = StratifiedKFold(n_splits=5, random_state=SEED, shuffle=True)
 splits = kfold.split(df_train, df_train['isup_grade'].astype(str) + df_train['data_provider'])
