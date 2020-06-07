@@ -279,7 +279,7 @@ if __name__ == '__main__':
                'opt_fit': 'val',
                'tiles_data_augmentation': False,
                'reg_loss': 'mse',
-               'opt_algo': 'over9000',
+               'opt_algo': 'ranger',
                'step_size': 0.6}
 
     LEVEL = hparams['level']
@@ -326,9 +326,9 @@ if __name__ == '__main__':
 
         model = LightModel(dict_to_args(hparams), train_idx, val_idx)
         trainer = pl.Trainer(gpus=[0], max_nb_epochs=EPOCHS, auto_lr_find=False,
-                             gradient_clip_val=0.5,
+                             gradient_clip_val=1,
                              logger=tb_logger,
-                             accumulate_grad_batches=1,              # BatchNorm ?
+                             accumulate_grad_batches=3,              # BatchNorm ?
                              checkpoint_callback=checkpoint_callback,
                              nb_sanity_val_steps=0,
                              precision=PRECISION,
