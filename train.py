@@ -253,7 +253,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     ROOT_PATH = args.root_dir
 
-    EPOCHS = 50
+    EPOCHS = 30
     SEED = 2020
     BATCH_SIZE = 8
     PRECISION = 16
@@ -376,7 +376,6 @@ if __name__ == '__main__':
                 pickle.dump(file=file, obj=list(np.sort(opt.coefficients())))
 
         # Todo: One fold training
-        break
 
 # Tests to do:
 # L1Smooth (small improvement)

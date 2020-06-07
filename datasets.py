@@ -35,8 +35,8 @@ class TileDataset(tdata.Dataset):
                 image = self.transform(image)
 
             image = 1 - image
-            image = transforms.Normalize([1.0-0.90949707, 1.0-0.8188697, 1.0-0.87795304],
-                                         [0.36357649, 0.49984502, 0.40477625])(image)
+            # image = transforms.Normalize([1.0-0.90949707, 1.0-0.8188697, 1.0-0.87795304],
+            #                              [0.36357649, 0.49984502, 0.40477625])(image)
             image_tiles.append(image)
 
         if torch.is_tensor(image_tiles[0]):
