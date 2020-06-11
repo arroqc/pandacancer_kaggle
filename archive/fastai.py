@@ -1,12 +1,9 @@
-import fastai
-from fastai.vision import *
-from fastai.callbacks import SaveModelCallback
+from archive.fastai import *
+from archive.fastai import SaveModelCallback
 import os
 from contribs.fancy_optimizers import Over9000
 from contribs.mish_activation import Mish
 from sklearn.model_selection import StratifiedKFold
-from sklearn.metrics import cohen_kappa_score,confusion_matrix
-
 
 sz = 128
 bs = 32

@@ -29,8 +29,8 @@ fold = 0
 tile_size = 224
 image_size = 224
 n_tiles = 36
-batch_size = 2
-num_workers = 4
+batch_size = 8
+num_workers = 8
 out_dim = 5
 init_lr = 3e-4
 warmup_factor = 10
@@ -45,8 +45,6 @@ n_epochs = 1 if DEBUG else 30
 df_train = df_train.sample(100).reset_index(drop=True) if DEBUG else df_train
 
 device = torch.device('cuda')
-
-print(image_folder)
 
 
 class PANDADataset(Dataset):

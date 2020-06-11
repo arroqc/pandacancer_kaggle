@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from modules import Model
+from archive.modules import Model
 from pathlib import Path
 import pickle
 

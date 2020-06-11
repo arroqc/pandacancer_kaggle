@@ -1,31 +1,46 @@
 import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sn
 import numpy as np
-import random
-import os
-import pickle
-import datetime
-import argparse
+from PIL import Image
+import io
 
-import torch
-import torch.nn as nn
-import torch.utils.data as tdata
-import torchvision.transforms as transforms
-import pytorch_lightning as pl
-from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import cohen_kappa_score
 from sklearn.metrics import confusion_matrix
-
-from contribs.torch_utils import split_weights, FlatCosineAnnealingLR
-from contribs.fancy_optimizers import Over9000, Ranger
-from contribs.kappa_rounder import OptimizedRounder_v2
-from datasets import TileDataset, SquareDataset
-from modules import ResnetModel, EfficientModel, EfficientModelSquare
+import pytorch_lightning as pl
+from torch.utils import data as tdata
+import torch.nn as nn
+import albumentations
+from modules import EfficientModel
+from datasets import SquareDataset
+from contribs.warmup import GradualWarmupScheduler
 from utils import dict_to_args
-from data_augmentation import AlbumentationTransform, TilesCompose, TilesRandomDuplicate, TilesRandomRemove
-import seaborn as sn
-import matplotlib.pyplot as plt
-import io
-from PIL import Image
+import datetime
+
+import torch
+import random
+import os
+import argparse
+from pathlib import Path
+import pickle
+#
+
+#
+
+#
+# import torch.utils.data as tdata
+# import torchvision.transforms as transforms
+#
+#
+#
+#
+# from archive.datasets import SquareDataset
+# from archive.modules import ResnetModel, EfficientModelSquare
+#
+# from archive.data_augmentation import AlbumentationTransform, TilesCompose, TilesRandomDuplicate, TilesRandomRemove
+#
+#
+#
 
 
 def convert_to_image(cm):
@@ -41,39 +56,20 @@ def convert_to_image(cm):
 
 class LightModel(pl.LightningModule):
 
-    def __init__(self, hparams, train_idx, val_idx):
+    def __init__(self, hparams, df_train, train_idx, val_idx, train_path):
         super().__init__()
         self.train_idx = train_idx
         self.val_idx = val_idx
+        self.df_train = df_train
+        self.train_path = train_path
 
-        if hparams.task == 'regression':
-            c_out = 1
-        elif hparams.task == 'bce':
-            c_out = 5
-        else:
-            c_out = 6
-
-        if 'efficient' in hparams.backbone:
-            # self.model = EfficientModel(c_out=c_out,
-            #                             n_tiles=hparams.n_tiles,
-            #                             tile_size=hparams.tile_size,
-            #                             name=hparams.backbone,
-            #                             head=hparams.head
-            #                             )
-            self.model = EfficientModelSquare(c_out=c_out,
-                                            n_tiles=hparams.n_tiles,
-                                            tile_size=hparams.tile_size,
-                                            name=hparams.backbone,
-                                            head=hparams.head)
-        else:
-            self.model = ResnetModel(c_out=c_out,
-                                     n_tiles=hparams.n_tiles,
-                                     tile_size=hparams.tile_size,
-                                     backbone=hparams.backbone,
-                                     head=hparams.head)
+        self.model = EfficientModel(c_out=5,
+                                    n_tiles=hparams.n_tiles,
+                                    tile_size=hparams.tile_size,
+                                    name=hparams.backbone
+                                    )
 
         self.hparams = hparams
-        self.opt = None
         self.trainset = None
         self.valset = None
 
@@ -81,160 +77,103 @@ class LightModel(pl.LightningModule):
         return self.model(batch['image'])
 
     def prepare_data(self):
-        transform_train = transforms.Compose([AlbumentationTransform(0.5),
-                                              transforms.ToTensor()])
-        transform_test = transforms.Compose([transforms.ToTensor()])
 
-        tiles_transform = None
-        if self.hparams.tiles_data_augmentation:
-            tiles_transform = TilesCompose([TilesRandomRemove(p=0.7, num=4),
-                                            TilesRandomDuplicate(p=0.7, num=4)])
-
-        # self.trainsets = [TileDataset(TRAIN_PATH + '0/', df_train.iloc[self.train_idx], suffix='',
-        #                               one_hot=True,
-        #                               num_tiles=self.hparams.n_tiles, transform=transform_train,
-        #                               tiles_transform=tiles_transform)]
-        #
-        # self.trainsets += [TileDataset(TRAIN_PATH + f'{i}/', df_train.iloc[self.train_idx], suffix=f'_{i}',
-        #                                one_hot=True,
-        #                                num_tiles=self.hparams.n_tiles, transform=transform_train,
-        #                                tiles_transform=tiles_transform) for i in range(1, 16)]
-        #
-        # self.valset = TileDataset(TRAIN_PATH + '0/', df_train.iloc[self.val_idx], suffix='', num_tiles=self.hparams.n_tiles,
-        #                           one_hot=True,
-        #                           transform=transform_test)
-        import albumentations
-        transforms_train = albumentations.Compose([
-            albumentations.Transpose(p=0.5),
-            albumentations.VerticalFlip(p=0.5),
-            albumentations.HorizontalFlip(p=0.5),
-        ])
+        transforms_train = albumentations.Compose([albumentations.Transpose(p=0.5),
+                                                   albumentations.VerticalFlip(p=0.5),
+                                                   albumentations.HorizontalFlip(p=0.5),
+                                                   ])
         transforms_val = albumentations.Compose([])
-        self.trainsets = [SquareDataset(TRAIN_PATH + '0/', df_train.iloc[self.train_idx], suffix='',
-                                      one_hot=True,
-                                      num_tiles=self.hparams.n_tiles, transform=transforms_train)]
 
-        self.trainsets += [SquareDataset(TRAIN_PATH + f'{i}/', df_train.iloc[self.train_idx], suffix=f'_{i}',
-                                       one_hot=True,
-                                       num_tiles=self.hparams.n_tiles, transform=transforms_train) for i in range(1, 16)]
+        self.trainsets = [SquareDataset(self.train_path + '0/', self.df_train.iloc[self.train_idx], suffix='',
+                                        one_hot=True,
+                                        num_tiles=self.hparams.n_tiles, transform=transforms_train)]
 
-        self.valset = SquareDataset(TRAIN_PATH + '0/', df_train.iloc[self.val_idx], suffix='', num_tiles=self.hparams.n_tiles,
-                                  one_hot=True,
-                                  transform=transforms_val)
+        self.trainsets += [SquareDataset(self.train_path + f'1/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
+                                         one_hot=True,
+                                         num_tiles=self.hparams.n_tiles,
+                                         transform=transforms_train) for i in range(1, 4)]
+        self.trainsets += [SquareDataset(self.train_path + f'2/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
+                                         one_hot=True,
+                                         num_tiles=self.hparams.n_tiles,
+                                         transform=transforms_train) for i in range(4, 8)]
+        self.trainsets += [SquareDataset(self.train_path + f'3/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
+                                         one_hot=True,
+                                         num_tiles=self.hparams.n_tiles,
+                                         transform=transforms_train) for i in range(8, 12)]
+        self.trainsets += [SquareDataset(self.train_path + f'4/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
+                                         one_hot=True,
+                                         num_tiles=self.hparams.n_tiles,
+                                         transform=transforms_train) for i in range(12, 16)]
+
+        # self.trainsets += [SquareDataset(self.train_path + f'{i}/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
+        #                                  one_hot=True,
+        #                                  num_tiles=self.hparams.n_tiles,
+        #                                  transform=transforms_train) for i in range(1, 16)]
+
+        self.valset = SquareDataset(self.train_path + '0/', self.df_train.iloc[self.val_idx], suffix='',
+                                    num_tiles=self.hparams.n_tiles, one_hot=True,
+                                    transform=transforms_val)
 
     def train_dataloader(self):
         rand_dataset = np.random.randint(0, len(self.trainsets))
         print('Using dataset', rand_dataset)
-        train_dl = tdata.DataLoader(self.trainsets[rand_dataset], batch_size=BATCH_SIZE, shuffle=True,
+        train_dl = tdata.DataLoader(self.trainsets[rand_dataset], batch_size=self.hparams.batch_size, shuffle=True,
                                     num_workers=self.hparams.num_workers)
         return train_dl
 
     def val_dataloader(self):
-        val_dl = tdata.DataLoader(self.valset, batch_size=BATCH_SIZE, shuffle=False,
+        val_dl = tdata.DataLoader(self.valset, batch_size=self.hparams.batch_size, shuffle=False,
                                   num_workers=self.hparams.num_workers)
         return [val_dl]
 
     def cross_entropy_loss(self, logits, gt):
-        if self.hparams.task == 'regression':
-            if self.hparams.reg_loss == 'mse':
-                loss_fn = nn.MSELoss()
-            elif self.hparams.reg_loss == 'smooth_l1':
-                loss_fn = nn.SmoothL1Loss()
-            gt = gt.unsqueeze(1).float()
-        elif self.hparams.task == 'bce':
-            loss_fn = nn.BCEWithLogitsLoss()
-        else:
-            loss_fn = nn.CrossEntropyLoss()
+        loss_fn = nn.BCEWithLogitsLoss()
         return loss_fn(logits, gt)
 
     def configure_optimizers(self):
 
-        if self.hparams.weight_decay:
-            params_backbone = split_weights(self.model.feature_extractor)
-            params_backbone[0]['lr'] = self.hparams.lr_backbone
-            params_backbone[1]['lr'] = self.hparams.lr_backbone
-            params_head = split_weights(self.model.head)
-            params_head[0]['lr'] = self.hparams.lr_head
-            params_head[1]['lr'] = self.hparams.lr_head
-            params = params_backbone + params_head
-        else:
-            params_backbone = self.model.feature_extractor.parameters()
-            params_head = self.model.head.parameters()
-            params = [dict(params=params_backbone, lr=self.hparams.lr_backbone),
-                      dict(params=params_head, lr=self.hparams.lr_head)]
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.hparams.init_lr)
+        # Lightning will call scheduler only when doing optim, so after accumulation !
+        total_steps = self.hparams.epochs * len(self.trainsets[0])//self.hparams.batch_size//self.hparams.accumulate
+        schedulers = [{'scheduler': torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=self.hparams.init_lr,
+                                                                        div_factor=self.hparams.warmup_factor,
+                                                                        total_steps=total_steps,
+                                                                        pct_start=1 / self.hparams.epochs),
+                       'interval': 'step',
+                       'frequency': 1
+                       }]
 
-        if self.hparams.opt_algo == 'ranger':
-            optimizer = Ranger(params, weight_decay=1e-5)
-            scheduler = FlatCosineAnnealingLR(optimizer, max_iter=EPOCHS, step_size=self.hparams.step_size)
-            return [optimizer], [scheduler]
-
-        if self.hparams.opt_algo == 'over9000':
-            optimizer = Over9000(params, weight_decay=1e-5)
-            scheduler = FlatCosineAnnealingLR(optimizer, max_iter=EPOCHS, step_size=self.hparams.step_size)
-            return [optimizer], [scheduler]
-
-        elif self.hparams.opt_algo == 'adam':
-            optimizer = torch.optim.Adam(params, weight_decay=1e-5)
-            scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=3e-4, final_div_factor=1000,
-                                                            total_steps=EPOCHS, pct_start=0.1)
-            #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=3, factor=0.5)
-            return [optimizer], [scheduler]
+        self.optimizer = optimizer
+        return [optimizer], schedulers
 
     def training_step(self, batch, batch_idx):
+
         logits = self(batch)
         loss = self.cross_entropy_loss(logits, batch['isup']).unsqueeze(0)
-        if self.hparams.task == 'regression':
-            preds = logits.squeeze(1)
-        elif self.hparams.task == 'bce':
-            preds = logits.sigmoid().sum(1)
-        else:
-            preds = logits.argmax(1)
+        preds = logits.sigmoid().sum(1)
         return {'loss': loss, 'preds': preds, 'gt': batch['isup'], 'log': {'train_loss': loss}}
 
     def training_epoch_end(self, outputs):
-        preds = torch.cat([out['preds'] for out in outputs], dim=0)
-        gt = torch.cat([out['gt'] for out in outputs], dim=0)
-        preds = preds.detach().cpu().numpy()
-        gt = gt.detach().cpu().numpy()
-
-        if self.hparams.task == 'regression' and self.hparams.opt_fit == 'train':
-            self.opt = OptimizedRounder_v2(6)
-            self.opt.fit(preds, gt)
-        elif self.hparams.task == 'bce':
-            gt = gt.sum(1)
-
-        return {}
+        avg_loss = torch.cat([out['loss'] for out in outputs], dim=0).mean()
+        tensorboard_logs = {'avg_train_loss': avg_loss}
+        return {'avg_train_loss': avg_loss, 'log': tensorboard_logs}
 
     def validation_step(self, batch, batch_idx):
         logits = self(batch)
         loss = self.cross_entropy_loss(logits, batch['isup']).unsqueeze(0)
-        if self.hparams.task == 'regression':
-            preds = logits.squeeze(1)
-        elif self.hparams.task == 'bce':
-            preds = logits.sigmoid().sum(1)
-        else:
-            preds = logits.argmax(1)
+        preds = logits.sigmoid().sum(1)
         return {'val_loss': loss, 'preds': preds, 'gt': batch['isup'], 'provider': batch['provider']}
 
     def validation_epoch_end(self, outputs):
+        print(f'lr: {self.optimizer.param_groups[0]["lr"]:.7f}')
         avg_loss = torch.cat([out['val_loss'] for out in outputs], dim=0).mean()
         preds = torch.cat([out['preds'] for out in outputs], dim=0)
         gt = torch.cat([out['gt'] for out in outputs], dim=0)
         provider = np.concatenate([out['provider'] for out in outputs], axis=0)
         preds = preds.detach().cpu().numpy()
         gt = gt.detach().cpu().numpy()
-
-        if self.hparams.task == 'regression':
-            if self.hparams.use_opt:
-                if self.opt is None or self.hparams.opt_fit == 'val':
-                    self.opt = OptimizedRounder_v2(6)
-                    self.opt.fit(preds, gt)
-                preds = self.opt.predict(preds)
-            else:
-                preds = np.round(preds)
-        elif self.hparams.task == 'bce':
-            preds = np.round(preds)
-            gt = gt.sum(1)
+        preds = np.round(preds)
+        gt = gt.sum(1)
 
         kappa = cohen_kappa_score(preds, gt, weights='quadratic')
         cm = confusion_matrix(gt, preds)
@@ -275,43 +214,32 @@ if __name__ == '__main__':
     parser.add_argument("--root_dir", default='H:/', required=False)
     args = parser.parse_args()
     ROOT_PATH = args.root_dir
-
-    EPOCHS = 30
     SEED = 2020
-    BATCH_SIZE = 8
     PRECISION = 16
-    NUM_WORKERS = 8
 
     hparams = {'backbone': 'efficientnet-b0',
                'head': 'basic',  # Max + attention concat ?
 
-               'lr_head': 3e-4,
-               'lr_backbone': 3e-4,
+               'init_lr': 3e-4,
+               'warmup_factor': 10,
 
-               'n_tiles': 32,
+               'n_tiles': 36,
                'level': 2,
                'scale': 1,
-               'tile_size': 224,
-               'num_workers': NUM_WORKERS,
-               'batch_size': BATCH_SIZE,
-
-               'task': 'bce',
-               'weight_decay': False,
-               'pretrained': True,
-               'use_opt': True,
-               'opt_fit': 'val',
-               'tiles_data_augmentation': False,
-               'reg_loss': 'mse',
-               'opt_algo': 'ranger',
-               'step_size': 0.6}
+               'tile_size': 256,
+               'num_workers': 8,
+               'batch_size': 4,
+               'accumulate': 2,
+               'epochs': 30,
+               }
 
     LEVEL = hparams['level']
     SIZE = hparams['tile_size']
     SCALE = hparams['scale']
-
-    TRAIN_PATH = ROOT_PATH + f'/train_tiles_{SIZE}_{LEVEL}_{int(SCALE*10)}/imgs/'
+    TRAIN_PATH = ROOT_PATH + f'/train_tiles_{SIZE}_{LEVEL}_{int(SCALE * 10)}/imgs/'
     CSV_PATH = './train.csv'  # This will include folds
-    NAME = 'resnext50'
+
+    NAME = 'efficient0'
     OUTPUT_DIR = './lightning_logs'
 
     random.seed(SEED)
@@ -323,19 +251,12 @@ if __name__ == '__main__':
     torch.backends.cudnn.benchmark = True
 
     df_train = pd.read_csv(CSV_PATH)
-    #kfold = StratifiedKFold(n_splits=5, random_state=SEED, shuffle=True)
-    #splits = kfold.split(df_train, df_train['isup_grade'].astype(str) + df_train['data_provider'])
-
     fold_n = df_train['fold'].max()
     splits = []
     for i in range(0, fold_n + 1):
         train_idx = np.where(df_train['fold'] != i)[0]
         val_idx = np.where(df_train['fold'] == i)[0]
         splits.append((train_idx, val_idx))
-
-    # with open(f'{ROOT_PATH}/stats_{SIZE}_{LEVEL}.pkl', 'rb') as file:
-    #     provider_stats = pickle.load(file)
-    # values = pd.read_csv(f'{ROOT_PATH}/files_{SIZE}_{LEVEL}.csv')
 
     date = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
     for fold, (train_idx, val_idx) in enumerate(splits):
@@ -347,26 +268,25 @@ if __name__ == '__main__':
         checkpoint_callback = pl.callbacks.ModelCheckpoint(filepath=tb_logger.log_dir + "/{epoch:02d}-{kappa:.4f}",
                                                            monitor='kappa', mode='max')
 
-        model = LightModel(dict_to_args(hparams), train_idx, val_idx)
-        trainer = pl.Trainer(gpus=[0], max_nb_epochs=EPOCHS, auto_lr_find=False,
+        model = LightModel(dict_to_args(hparams), df_train, train_idx, val_idx, TRAIN_PATH)
+        trainer = pl.Trainer(gpus=[0], max_nb_epochs=hparams['epochs'], auto_lr_find=False,
                              gradient_clip_val=1,
                              logger=tb_logger,
-                             accumulate_grad_batches=3,              # BatchNorm ?
+                             accumulate_grad_batches=hparams['accumulate'],              # BatchNorm ?
                              checkpoint_callback=checkpoint_callback,
                              nb_sanity_val_steps=0,
                              precision=PRECISION,
-                             reload_dataloaders_every_epoch=True
+                             reload_dataloaders_every_epoch=True,
+                             #resume_from_checkpoint='./lightning_logs/efficient0-20200607-225541/fold_1/epoch=10-kappa=0.8665.ckpt'
                              )
-        # lr_finder = trainer.lr_find(model)
-        # fig = lr_finder.plot(suggest=True)
-        # fig.savefig('lr_plot.png')
         trainer.fit(model)
 
         # Fold predictions
-        from pathlib import Path
         print('Load best checkpoint')
         ckpt = list(Path(tb_logger.log_dir).glob('*.ckpt'))[0]
-        model.load_from_checkpoint(str(ckpt), train_idx=train_idx, val_idx=val_idx, hparams=dict_to_args(hparams))
+        ckpt = torch.load(ckpt)
+        model.load_state_dict(ckpt['state_dict'])
+
         torch_model = model.model.eval().to('cuda')
         preds = []
         gt = []
@@ -374,29 +294,16 @@ if __name__ == '__main__':
             for batch in model.val_dataloader()[0]:
                 image = batch['image'].to('cuda')
                 pred = torch_model(image)
-                if hparams['task'] == 'bce':
-                    pred = torch.sigmoid(pred)
-                gt.append(batch['isup'])
+                pred = torch.sigmoid(pred).sum(1)
+                gt.append(batch['isup'].sum(1))
                 preds.append(pred)
-        preds = torch.cat(preds, dim=0).squeeze(1).detach().cpu().numpy()
+        preds = torch.cat(preds, dim=0).detach().cpu().numpy()
         gt = torch.cat(gt, dim=0).detach().cpu().numpy()
-        if hparams['task'] == 'classification':
-            pd.DataFrame({'val_idx': val_idx, 'preds0': preds[:, 0], 'preds1': preds[:, 1], 'preds2': preds[:, 2],
-                          'preds3': preds[:, 3], 'preds4': preds[:, 4], 'preds5': preds[:, 5], 'gt': gt}).to_csv(
-                f'{OUTPUT_DIR}/{NAME}-{date}/fold{fold + 1}_preds.csv', index=False)
-        elif hparams['task'] == 'bce':
-            pd.DataFrame({'val_idx': val_idx, 'preds': preds.sum(1), 'gt': gt.sum(1)}).to_csv(
-                f'{OUTPUT_DIR}/{NAME}-{date}/fold{fold + 1}_preds.csv', index=False)
-        else:
-            pd.DataFrame({'val_idx': val_idx, 'preds': preds, 'gt': gt}).to_csv(
-                f'{OUTPUT_DIR}/{NAME}-{date}/fold{fold + 1}_preds.csv', index=False)
+        pd.DataFrame({'val_idx': val_idx, 'preds': preds, 'gt': gt}).to_csv(
+                     f'{OUTPUT_DIR}/{NAME}-{date}/fold{fold + 1}_preds.csv', index=False)
+        with open(f'{OUTPUT_DIR}/{NAME}-{date}/hparams.pkl', 'wb') as file:
+            pickle.dump(hparams, file)
 
-        if hparams['use_opt'] and hparams['opt_fit'] == 'val' and hparams['task'] == 'regression':
-            opt = OptimizedRounder_v2(6)
-            opt.fit(preds, gt)
-            print(opt.coefficients())
-            with open(f'{OUTPUT_DIR}/{NAME}-{date}/fold{fold + 1}_coef.pkl', 'wb') as file:
-                pickle.dump(file=file, obj=list(np.sort(opt.coefficients())))
 
         # Todo: One fold training
 

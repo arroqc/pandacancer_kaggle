@@ -8,7 +8,6 @@ import pandas as pd
 import datetime
 from deepattention.deep_attention import DeepAttentionPL
 from sklearn.model_selection import StratifiedKFold
-import pickle
 import pytorch_lightning as pl
 
 
