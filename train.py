@@ -1,5 +1,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib
+
 import seaborn as sn
 import numpy as np
 from PIL import Image
@@ -22,6 +24,9 @@ import os
 import argparse
 from pathlib import Path
 import pickle
+from contribs.fancy_optimizers import Over9000, Ranger
+from contribs.torch_utils import FlatCosineAnnealingLR
+matplotlib.use('Agg')
 
 
 def convert_to_image(cm):
@@ -43,11 +48,12 @@ class LightModel(pl.LightningModule):
         self.val_idx = val_idx
         self.df_train = df_train
         self.train_path = train_path
-
-        self.model = EfficientModel(c_out=5,
+        c_out = 5 if hparams.loss == 'bce' else 1
+        self.model = EfficientModel(c_out=c_out,
                                     n_tiles=hparams.n_tiles,
                                     tile_size=hparams.tile_size,
-                                    name=hparams.backbone
+                                    name=hparams.backbone,
+                                    strategy=hparams.strategy
                                     )
 
         self.hparams = hparams
@@ -65,34 +71,40 @@ class LightModel(pl.LightningModule):
                                                    ])
         transforms_val = albumentations.Compose([])
 
+        if self.hparams.strategy == 'bag':
+            return_stitched = False
+        else:
+            return_stitched = True
+        one_hot = True if self.hparams.loss == 'bce' else False
+
         self.trainsets = [TileDataset(self.train_path + '0/', self.df_train.iloc[self.train_idx], suffix='',
-                                      one_hot=True,
+                                      one_hot=one_hot, return_stitched=return_stitched,
                                       num_tiles=self.hparams.n_tiles, transform=transforms_train)]
 
-        # self.trainsets += [TileDataset(self.train_path + f'1/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
-        #                                one_hot=True,
-        #                                num_tiles=self.hparams.n_tiles,
-        #                                transform=transforms_train) for i in range(1, 4)]
+        self.trainsets += [TileDataset(self.train_path + f'1/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
+                                       one_hot=one_hot, return_stitched=return_stitched,
+                                       num_tiles=self.hparams.n_tiles,
+                                       transform=transforms_train) for i in range(1, 4)]
         # self.trainsets += [TileDataset(self.train_path + f'2/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
-        #                                one_hot=True,
+        #                                one_hot=one_hot, return_stitched=return_stitched,
         #                                num_tiles=self.hparams.n_tiles,
         #                                transform=transforms_train) for i in range(4, 8)]
         # self.trainsets += [TileDataset(self.train_path + f'3/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
-        #                                one_hot=True,
+        #                                one_hot=one_hot, return_stitched=return_stitched,
         #                                num_tiles=self.hparams.n_tiles,
         #                                transform=transforms_train) for i in range(8, 12)]
         # self.trainsets += [TileDataset(self.train_path + f'4/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
-        #                                one_hot=True,
+        #                                one_hot=one_hot, return_stitched=return_stitched,
         #                                num_tiles=self.hparams.n_tiles,
         #                                transform=transforms_train) for i in range(12, 16)]
 
-        self.trainsets += [TileDataset(self.train_path + f'{i}/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
-                                         one_hot=True,
-                                         num_tiles=self.hparams.n_tiles,
-                                         transform=transforms_train) for i in range(1, 16)]
+        # self.trainsets += [TileDataset(self.train_path + f'{i}/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
+        #                                  one_hot=one_hot,
+        #                                  num_tiles=self.hparams.n_tiles,
+        #                                  transform=transforms_train) for i in range(1, 16)]
 
         self.valset = TileDataset(self.train_path + '0/', self.df_train.iloc[self.val_idx], suffix='',
-                                  num_tiles=self.hparams.n_tiles, one_hot=True,
+                                  num_tiles=self.hparams.n_tiles, one_hot=one_hot, return_stitched=return_stitched,
                                   transform=transforms_val)
 
     def train_dataloader(self):
@@ -108,30 +120,46 @@ class LightModel(pl.LightningModule):
         return [val_dl]
 
     def cross_entropy_loss(self, logits, gt):
-        loss_fn = nn.BCEWithLogitsLoss()
+        if self.hparams.loss == 'bce':
+            loss_fn = nn.BCEWithLogitsLoss()
+        elif self.hparams.loss == 'mse':
+            loss_fn = nn.MSELoss()
         return loss_fn(logits, gt)
 
     def configure_optimizers(self):
 
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.hparams.init_lr)
-        # Lightning will call scheduler only when doing optim, so after accumulation !
-        total_steps = self.hparams.epochs * len(self.trainsets[0])//self.hparams.batch_size//self.hparams.accumulate
-        schedulers = [{'scheduler': torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=self.hparams.init_lr,
-                                                                        div_factor=self.hparams.warmup_factor,
-                                                                        total_steps=total_steps,
-                                                                        pct_start=1 / self.hparams.epochs),
-                       'interval': 'step',
-                       'frequency': 1
-                       }]
+        if self.hparams.strategy == 'bag':
+            params = [dict(params=self.model.feature_extractor.parameters(), lr=1e-4),
+                      dict(params=self.model.head.parameters(), lr=1e-3)]
+            optimizer = Over9000(params)
+            schedulers = [FlatCosineAnnealingLR(optimizer, max_iter=self.hparams.epochs,
+                                                step_size=self.hparams.step_size)]
+        else:
+            optimizer = torch.optim.Adam(self.model.parameters(), lr=self.hparams.init_lr)
+            # Lightning will call scheduler only when doing optim, so after accumulation !
+            total_steps = self.hparams.epochs * len(self.trainsets[0])//self.hparams.batch_size//self.hparams.accumulate
+            schedulers = [{'scheduler': torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=self.hparams.init_lr,
+                                                                            div_factor=self.hparams.warmup_factor,
+                                                                            total_steps=total_steps,
+                                                                            pct_start=1 / self.hparams.epochs),
+                           'interval': 'step',
+                           'frequency': 1
+                           }]
 
         self.optimizer = optimizer
         return [optimizer], schedulers
 
-    def training_step(self, batch, batch_idx):
+    def logits_to_preds(self, logits):
+        if self.hparams.loss == 'bce':
+            preds = logits.sigmoid().sum(1)
+        elif self.hparams.loss == 'mse':
+            preds = logits.squeeze(1)
+        return preds
 
+    def training_step(self, batch, batch_idx):
         logits = self(batch)
         loss = self.cross_entropy_loss(logits, batch['isup']).unsqueeze(0)
-        preds = logits.sigmoid().sum(1)
+        preds = self.logits_to_preds(logits)
         return {'loss': loss, 'preds': preds, 'gt': batch['isup'], 'log': {'train_loss': loss}}
 
     def training_epoch_end(self, outputs):
@@ -142,7 +170,8 @@ class LightModel(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         logits = self(batch)
         loss = self.cross_entropy_loss(logits, batch['isup']).unsqueeze(0)
-        preds = logits.sigmoid().sum(1)
+        preds = self.logits_to_preds(logits)
+
         return {'val_loss': loss, 'preds': preds, 'gt': batch['isup'], 'provider': batch['provider']}
 
     def validation_epoch_end(self, outputs):
@@ -154,6 +183,7 @@ class LightModel(pl.LightningModule):
         preds = preds.detach().cpu().numpy()
         gt = gt.detach().cpu().numpy()
         preds = np.round(preds)
+
         gt = gt.sum(1)
 
         kappa = cohen_kappa_score(preds, gt, weights='quadratic')
@@ -198,19 +228,22 @@ if __name__ == '__main__':
     SEED = 2020
     PRECISION = 16
 
-    hparams = {'backbone': 'efficientnet-b0',
+    hparams = {'strategy': 'bag',
+               'backbone': 'efficientnet-b0',
+               'loss': 'mse',
                'head': 'basic',  # Max + attention concat ?
 
                'init_lr': 3e-4,
                'warmup_factor': 10,
+               'step_size': 0.7,
 
                'n_tiles': 36,
                'level': 2,
                'scale': 1,
                'tile_size': 224,
                'num_workers': 8,
-               'batch_size': 8,
-               'accumulate': 1,
+               'batch_size': 4,
+               'accumulate': 2,
                'epochs': 30,
                }
 
@@ -257,8 +290,7 @@ if __name__ == '__main__':
                              checkpoint_callback=checkpoint_callback,
                              nb_sanity_val_steps=0,
                              precision=PRECISION,
-                             reload_dataloaders_every_epoch=True,
-                             #resume_from_checkpoint='./lightning_logs/efficient0-20200607-225541/fold_1/epoch=10-kappa=0.8665.ckpt'
+                             reload_dataloaders_every_epoch=True
                              )
         trainer.fit(model)
 
@@ -287,7 +319,7 @@ if __name__ == '__main__':
 
 
         # Todo: One fold training
-
+        break
 # Tests to do:
 # L1Smooth (small improvement)
 # Gradient accumulation

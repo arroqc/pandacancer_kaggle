@@ -152,7 +152,7 @@ def job(img_fn):
     img_id = img_fn.stem
     col = skimage.io.MultiImage(str(img_fn))
     image = col[-LEVEL]
-    image = trim_background(image)
+    #image = trim_background(image)
 
     if SCALE != 1.0:
         h, w, _ = image.shape

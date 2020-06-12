@@ -47,6 +47,8 @@ class TileDataset(tdata.Dataset):
                 isup = torch.tensor([1, 1, 1, 1, 0], dtype=torch.float32)
             elif isup == 5:
                 isup = torch.tensor([1, 1, 1, 1, 1], dtype=torch.float32)
+        else:
+            isup = float(isup)
 
         return {'image': images, 'provider': metadata['data_provider'],
                 'isup': isup, 'gleason': metadata['gleason_score']}
