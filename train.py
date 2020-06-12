@@ -12,8 +12,7 @@ from torch.utils import data as tdata
 import torch.nn as nn
 import albumentations
 from modules import EfficientModel
-from datasets import SquareDataset
-from contribs.warmup import GradualWarmupScheduler
+from datasets import TileDataset
 from utils import dict_to_args
 import datetime
 
@@ -23,24 +22,6 @@ import os
 import argparse
 from pathlib import Path
 import pickle
-#
-
-#
-
-#
-# import torch.utils.data as tdata
-# import torchvision.transforms as transforms
-#
-#
-#
-#
-# from archive.datasets import SquareDataset
-# from archive.modules import ResnetModel, EfficientModelSquare
-#
-# from archive.data_augmentation import AlbumentationTransform, TilesCompose, TilesRandomDuplicate, TilesRandomRemove
-#
-#
-#
 
 
 def convert_to_image(cm):
@@ -84,35 +65,35 @@ class LightModel(pl.LightningModule):
                                                    ])
         transforms_val = albumentations.Compose([])
 
-        self.trainsets = [SquareDataset(self.train_path + '0/', self.df_train.iloc[self.train_idx], suffix='',
-                                        one_hot=True,
-                                        num_tiles=self.hparams.n_tiles, transform=transforms_train)]
+        self.trainsets = [TileDataset(self.train_path + '0/', self.df_train.iloc[self.train_idx], suffix='',
+                                      one_hot=True,
+                                      num_tiles=self.hparams.n_tiles, transform=transforms_train)]
 
-        self.trainsets += [SquareDataset(self.train_path + f'1/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
-                                         one_hot=True,
-                                         num_tiles=self.hparams.n_tiles,
-                                         transform=transforms_train) for i in range(1, 4)]
-        self.trainsets += [SquareDataset(self.train_path + f'2/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
-                                         one_hot=True,
-                                         num_tiles=self.hparams.n_tiles,
-                                         transform=transforms_train) for i in range(4, 8)]
-        self.trainsets += [SquareDataset(self.train_path + f'3/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
-                                         one_hot=True,
-                                         num_tiles=self.hparams.n_tiles,
-                                         transform=transforms_train) for i in range(8, 12)]
-        self.trainsets += [SquareDataset(self.train_path + f'4/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
-                                         one_hot=True,
-                                         num_tiles=self.hparams.n_tiles,
-                                         transform=transforms_train) for i in range(12, 16)]
+        self.trainsets += [TileDataset(self.train_path + f'1/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
+                                       one_hot=True,
+                                       num_tiles=self.hparams.n_tiles,
+                                       transform=transforms_train) for i in range(1, 4)]
+        self.trainsets += [TileDataset(self.train_path + f'2/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
+                                       one_hot=True,
+                                       num_tiles=self.hparams.n_tiles,
+                                       transform=transforms_train) for i in range(4, 8)]
+        self.trainsets += [TileDataset(self.train_path + f'3/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
+                                       one_hot=True,
+                                       num_tiles=self.hparams.n_tiles,
+                                       transform=transforms_train) for i in range(8, 12)]
+        self.trainsets += [TileDataset(self.train_path + f'4/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
+                                       one_hot=True,
+                                       num_tiles=self.hparams.n_tiles,
+                                       transform=transforms_train) for i in range(12, 16)]
 
         # self.trainsets += [SquareDataset(self.train_path + f'{i}/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
         #                                  one_hot=True,
         #                                  num_tiles=self.hparams.n_tiles,
         #                                  transform=transforms_train) for i in range(1, 16)]
 
-        self.valset = SquareDataset(self.train_path + '0/', self.df_train.iloc[self.val_idx], suffix='',
-                                    num_tiles=self.hparams.n_tiles, one_hot=True,
-                                    transform=transforms_val)
+        self.valset = TileDataset(self.train_path + '0/', self.df_train.iloc[self.val_idx], suffix='',
+                                  num_tiles=self.hparams.n_tiles, one_hot=True,
+                                  transform=transforms_val)
 
     def train_dataloader(self):
         rand_dataset = np.random.randint(0, len(self.trainsets))
