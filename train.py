@@ -69,27 +69,27 @@ class LightModel(pl.LightningModule):
                                       one_hot=True,
                                       num_tiles=self.hparams.n_tiles, transform=transforms_train)]
 
-        self.trainsets += [TileDataset(self.train_path + f'1/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
-                                       one_hot=True,
-                                       num_tiles=self.hparams.n_tiles,
-                                       transform=transforms_train) for i in range(1, 4)]
-        self.trainsets += [TileDataset(self.train_path + f'2/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
-                                       one_hot=True,
-                                       num_tiles=self.hparams.n_tiles,
-                                       transform=transforms_train) for i in range(4, 8)]
-        self.trainsets += [TileDataset(self.train_path + f'3/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
-                                       one_hot=True,
-                                       num_tiles=self.hparams.n_tiles,
-                                       transform=transforms_train) for i in range(8, 12)]
-        self.trainsets += [TileDataset(self.train_path + f'4/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
-                                       one_hot=True,
-                                       num_tiles=self.hparams.n_tiles,
-                                       transform=transforms_train) for i in range(12, 16)]
+        # self.trainsets += [TileDataset(self.train_path + f'1/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
+        #                                one_hot=True,
+        #                                num_tiles=self.hparams.n_tiles,
+        #                                transform=transforms_train) for i in range(1, 4)]
+        # self.trainsets += [TileDataset(self.train_path + f'2/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
+        #                                one_hot=True,
+        #                                num_tiles=self.hparams.n_tiles,
+        #                                transform=transforms_train) for i in range(4, 8)]
+        # self.trainsets += [TileDataset(self.train_path + f'3/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
+        #                                one_hot=True,
+        #                                num_tiles=self.hparams.n_tiles,
+        #                                transform=transforms_train) for i in range(8, 12)]
+        # self.trainsets += [TileDataset(self.train_path + f'4/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
+        #                                one_hot=True,
+        #                                num_tiles=self.hparams.n_tiles,
+        #                                transform=transforms_train) for i in range(12, 16)]
 
-        # self.trainsets += [SquareDataset(self.train_path + f'{i}/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
-        #                                  one_hot=True,
-        #                                  num_tiles=self.hparams.n_tiles,
-        #                                  transform=transforms_train) for i in range(1, 16)]
+        self.trainsets += [TileDataset(self.train_path + f'{i}/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
+                                         one_hot=True,
+                                         num_tiles=self.hparams.n_tiles,
+                                         transform=transforms_train) for i in range(1, 16)]
 
         self.valset = TileDataset(self.train_path + '0/', self.df_train.iloc[self.val_idx], suffix='',
                                   num_tiles=self.hparams.n_tiles, one_hot=True,
@@ -207,10 +207,10 @@ if __name__ == '__main__':
                'n_tiles': 36,
                'level': 2,
                'scale': 1,
-               'tile_size': 256,
+               'tile_size': 224,
                'num_workers': 8,
-               'batch_size': 4,
-               'accumulate': 2,
+               'batch_size': 8,
+               'accumulate': 1,
                'epochs': 30,
                }
 
