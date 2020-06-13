@@ -12,7 +12,7 @@ class AdaptiveConcatPool2d(nn.Module):
     def forward(self, x):
         avg_x = self.avg(x)
         max_x = self.max(x)
-        return torch.cat([avg_x, max_x], dim=1)
+        return torch.cat([avg_x, max_x], dim=1).squeeze(2).squeeze(2)
 
 
 class Flatten(nn.Module):
@@ -22,7 +22,7 @@ class Flatten(nn.Module):
 
 class EfficientModel(nn.Module):
 
-    def __init__(self, c_out=5, n_tiles=36, tile_size=224, name='efficientnet-b0', strategy='stitched'):
+    def __init__(self, c_out=5, n_tiles=36, tile_size=224, name='efficientnet-b0', strategy='stitched', head='basic'):
         super().__init__()
 
         from efficientnet_pytorch import EfficientNet
@@ -32,11 +32,13 @@ class EfficientModel(nn.Module):
         self.feature_extractor = m
         self.n_tiles = n_tiles
         self.tile_size = tile_size
-        m._avg_pool = GeM()
         if strategy == 'stitched':
             self.head = nn.Linear(c_feature, c_out)
-        else:
-            self.head = BasicHead(c_feature, c_out, n_tiles)
+        elif strategy == 'bag':
+            if head == 'basic':
+                self.head = BasicHead(c_feature, c_out, n_tiles)
+            elif head == 'attention':
+                self.head = AttentionHead(c_feature, c_out, n_tiles)
         self.strategy = strategy
 
     def forward(self, x):
@@ -52,9 +54,8 @@ class BasicHead(nn.Module):
     def __init__(self, c_in, c_out, n_tiles):
         self.n_tiles = n_tiles
         super().__init__()
-        self.fc = nn.Sequential(GeM(),
-                                Flatten(),
-                                nn.Linear(c_in, c_out))
+        self.fc = nn.Sequential(AdaptiveConcatPool2d(),
+                                nn.Linear(c_in * 2, c_out))
 
     def forward(self, x):
 
@@ -63,6 +64,36 @@ class BasicHead(nn.Module):
             .contiguous().view(-1, c, 1 * self.n_tiles, 1)
         h = self.fc(h)
         return h
+
+
+class AttentionHead(nn.Module):
+
+    def __init__(self, c_in, c_out, n_tiles):
+        self.n_tiles = n_tiles
+        super().__init__()
+        self.attention_pool = AttentionPool(c_in, c_in//2)
+        self.fc = nn.Linear(c_in, c_out)
+
+    def forward(self, x):
+
+        bn, c = x.shape
+        h = x.view(-1, self.n_tiles, c)
+        h = self.fc(h)
+        return h
+
+
+class AttentionPool(nn.Module):
+
+    def __init__(self, c_in, d):
+        super().__init__()
+        self.lin_V = nn.Linear(c_in, d)
+        self.lin_w = nn.Linear(d, 1)
+
+    def forward(self, x):
+        key = self.lin_V(x)  # b, n, d
+        weights = self.lin_w(torch.tanh(key))  # b, n, 1
+        pooled = torch.matmul(x.transpose(1, 2), weights).squeeze(2)   # b, c, n x b, n, 1 => b, c, 1
+        return pooled
 
 
 class GeM(nn.Module):

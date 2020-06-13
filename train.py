@@ -53,7 +53,8 @@ class LightModel(pl.LightningModule):
                                     n_tiles=hparams.n_tiles,
                                     tile_size=hparams.tile_size,
                                     name=hparams.backbone,
-                                    strategy=hparams.strategy
+                                    strategy=hparams.strategy,
+                                    head=hparams.head
                                     )
 
         self.hparams = hparams
@@ -81,10 +82,10 @@ class LightModel(pl.LightningModule):
                                       one_hot=one_hot, return_stitched=return_stitched,
                                       num_tiles=self.hparams.n_tiles, transform=transforms_train)]
 
-        self.trainsets += [TileDataset(self.train_path + f'1/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
-                                       one_hot=one_hot, return_stitched=return_stitched,
-                                       num_tiles=self.hparams.n_tiles,
-                                       transform=transforms_train) for i in range(1, 4)]
+        # self.trainsets += [TileDataset(self.train_path + f'1/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
+        #                                one_hot=one_hot, return_stitched=return_stitched,
+        #                                num_tiles=self.hparams.n_tiles,
+        #                                transform=transforms_train) for i in range(1, 4)]
         # self.trainsets += [TileDataset(self.train_path + f'2/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
         #                                one_hot=one_hot, return_stitched=return_stitched,
         #                                num_tiles=self.hparams.n_tiles,
@@ -134,7 +135,7 @@ class LightModel(pl.LightningModule):
             optimizer = Over9000(params)
             schedulers = [FlatCosineAnnealingLR(optimizer, max_iter=self.hparams.epochs,
                                                 step_size=self.hparams.step_size)]
-        else:
+        elif self.hparams.strategy == 'stitched':
             optimizer = torch.optim.Adam(self.model.parameters(), lr=self.hparams.init_lr)
             # Lightning will call scheduler only when doing optim, so after accumulation !
             total_steps = self.hparams.epochs * len(self.trainsets[0])//self.hparams.batch_size//self.hparams.accumulate
@@ -184,7 +185,8 @@ class LightModel(pl.LightningModule):
         gt = gt.detach().cpu().numpy()
         preds = np.round(preds)
 
-        gt = gt.sum(1)
+        if self.hparams.loss == 'bce':
+            gt = gt.sum(1)
 
         kappa = cohen_kappa_score(preds, gt, weights='quadratic')
         cm = confusion_matrix(gt, preds)
@@ -228,11 +230,13 @@ if __name__ == '__main__':
     SEED = 2020
     PRECISION = 16
 
-    hparams = {'strategy': 'bag',
+    hparams = {'strategy': 'stitched',
                'backbone': 'efficientnet-b0',
-               'loss': 'mse',
-               'head': 'basic',  # Max + attention concat ?
+               'head': 'basic',   # or attention
+               'cancer_only': False,
+               'predict_gleason': False,
 
+               'loss': 'bce',
                'init_lr': 3e-4,
                'warmup_factor': 10,
                'step_size': 0.7,
@@ -240,7 +244,7 @@ if __name__ == '__main__':
                'n_tiles': 36,
                'level': 2,
                'scale': 1,
-               'tile_size': 224,
+               'tile_size': 256,
                'num_workers': 8,
                'batch_size': 4,
                'accumulate': 2,
@@ -265,6 +269,7 @@ if __name__ == '__main__':
     torch.backends.cudnn.benchmark = True
 
     df_train = pd.read_csv(CSV_PATH)
+    df_train['gleason_score'] = np.where(df_train['gleason_score'] == 'negative', '0+0', df_train['gleason_score'])
     fold_n = df_train['fold'].max()
     splits = []
     for i in range(0, fold_n + 1):
@@ -320,15 +325,3 @@ if __name__ == '__main__':
 
         # Todo: One fold training
         break
-# Tests to do:
-# L1Smooth (small improvement)
-# Gradient accumulation
-# Test each options
-# Level 1 images > Increase size and/or number
-# Longer training
-# RandomTileDataset
-# Max/avg pool per tile then self attention.
-# Use both level 1 and level 2
-
-# Multi head attention pool.
-# Tree method on the pooled representation

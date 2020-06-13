@@ -127,32 +127,10 @@ def remove_pen_marks(img):
     return img, img_mask1, img_mask2
 
 
-def trim_background(image):
-    ## (1) Convert to gray, and threshold
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    th, threshed = cv2.threshold(gray, 240, 255, cv2.THRESH_BINARY_INV)
-
-    ## (2) Morph-op to remove noise
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11,11))
-    morphed = cv2.morphologyEx(threshed, cv2.MORPH_CLOSE, kernel)
-
-    ## (3) Find the max-area contour
-    try:
-        cnts = cv2.findContours(morphed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
-        cnt = sorted(cnts, key=cv2.contourArea)[-1]
-        ## (4) Crop and save it
-        x, y, w, h = cv2.boundingRect(cnt)
-        dst = image[y:y + h, x:x + w]
-        return dst
-    except:
-        return image
-
-
 def job(img_fn):
     img_id = img_fn.stem
     col = skimage.io.MultiImage(str(img_fn))
     image = col[-LEVEL]
-    #image = trim_background(image)
 
     if SCALE != 1.0:
         h, w, _ = image.shape
@@ -180,7 +158,7 @@ def job(img_fn):
         tiles = tile_maker(image)
         tiles_stats += save_to_disk(tiles, img_id, prefix='', suffix='')
 
-    if 6 in SETS:
+    if 2 in SETS:
         # Flip vertical
         image_tr = cv2.flip(image, 0)
         tiles = tile_maker(image_tr)
@@ -211,79 +189,6 @@ def job(img_fn):
         image_tr = image[SIZE // 2:-SIZE // 2, SIZE // 2:-SIZE // 2]
         tiles = tile_maker(image_tr)
         tiles_stats += save_to_disk(tiles, img_id, prefix='', suffix='_3')
-
-    if 2 in SETS:
-        # Rotate 15degrees
-        image_tr = rotate_image(image, 15)
-        tiles = tile_maker(image_tr)
-        tiles_stats += save_to_disk(tiles, img_id, prefix='', suffix='_4')
-
-        # Rotate -15degrees
-        image_tr = rotate_image(image, -15)
-        tiles = tile_maker(image_tr)
-        tiles_stats += save_to_disk(tiles, img_id, prefix='', suffix='_5')
-
-        # Rotate 15 degrees and stride right/down
-        image_tr = rotate_image(image, 15)
-        image_tr = image_tr[SIZE // 2:-SIZE // 2, SIZE // 2:-SIZE // 2]
-        tiles = tile_maker(image_tr)
-        tiles_stats += save_to_disk(tiles, img_id, prefix='', suffix='_6')
-
-        # Rotate -15 degrees and stride right/down
-        image_tr = rotate_image(image, -15)
-        image_tr = image_tr[SIZE // 2:-SIZE // 2, SIZE // 2:-SIZE // 2]
-        tiles = tile_maker(image_tr)
-        tiles_stats += save_to_disk(tiles, img_id, prefix='', suffix='_7')
-
-    if 3 in SETS:
-        # Rotate 30degrees
-        image_tr = rotate_image(image, 30)
-        tiles = tile_maker(image_tr)
-        tiles_stats += save_to_disk(tiles, img_id, prefix='', suffix='_8')
-
-        # Rotate -30degrees
-        image_tr = rotate_image(image, -30)
-        tiles = tile_maker(image_tr)
-        tiles_stats += save_to_disk(tiles, img_id, prefix='', suffix='_9')
-
-        # Rotate 30 degrees and stride right/down
-        image_tr = rotate_image(image, 30)
-        image_tr = image_tr[SIZE // 2:-SIZE // 2, SIZE // 2:-SIZE // 2]
-        tiles = tile_maker(image_tr)
-        tiles_stats += save_to_disk(tiles, img_id, prefix='', suffix='_10')
-
-        # Rotate -30 degrees and stride right/down
-        image_tr = rotate_image(image, -30)
-        image_tr = image_tr[SIZE // 2:-SIZE // 2, SIZE // 2:-SIZE // 2]
-        tiles = tile_maker(image_tr)
-        tiles_stats += save_to_disk(tiles, img_id, prefix='', suffix='_11')
-
-    if 4 in SETS:
-        # Rescale 0.1
-        new_h, new_w = int(image.shape[0] * 1.1), int(image.shape[1] * 1.1)
-        image_tr = cv2.resize(image, (new_w, new_h))
-        tiles = tile_maker(image_tr)
-        tiles_stats += save_to_disk(tiles, img_id, prefix='', suffix='_12')
-
-        # Rescale -0.1
-        new_h, new_w = int(image.shape[0] * 0.9), int(image.shape[1] * 0.9)
-        image_tr = cv2.resize(image, (new_w, new_h))
-        tiles = tile_maker(image_tr)
-        tiles_stats += save_to_disk(tiles, img_id, prefix='', suffix='_13')
-
-        # Rescale 0.1 and stride right/down
-        new_h, new_w = int(image.shape[0] * 1.1), int(image.shape[1] * 1.1)
-        image_tr = cv2.resize(image, (new_w, new_h))
-        image_tr = image_tr[SIZE // 2:-SIZE // 2, SIZE // 2:-SIZE // 2]
-        tiles = tile_maker(image_tr)
-        tiles_stats += save_to_disk(tiles, img_id, prefix='', suffix='_14')
-
-        # Rescale -0.1 and stride right/down
-        new_h, new_w = int(image.shape[0] * 0.9), int(image.shape[1] * 0.9)
-        image_tr = cv2.resize(image, (new_w, new_h))
-        image_tr = image_tr[SIZE // 2:-SIZE // 2, SIZE // 2:-SIZE // 2]
-        tiles = tile_maker(image_tr)
-        tiles_stats += save_to_disk(tiles, img_id, prefix='', suffix='_15')
 
     return {'stats': tiles_stats, 'image_stats': image_stats}
 
