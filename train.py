@@ -318,7 +318,6 @@ if __name__ == '__main__':
                              accumulate_grad_batches=hparams['accumulate'],              # BatchNorm ?
                              checkpoint_callback=checkpoint_callback,
                              nb_sanity_val_steps=0,
-                             train_percent_check=0.25,
                              precision=PRECISION,
                              reload_dataloaders_every_epoch=True
                              )

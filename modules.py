@@ -78,6 +78,7 @@ class AttentionHead(nn.Module):
 
         bn, c = x.shape
         h = x.view(-1, self.n_tiles, c)
+        h = self.attention_pool(h)
         h = self.fc(h)
         return h
 
