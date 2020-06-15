@@ -90,9 +90,14 @@ class AttentionPool(nn.Module):
         self.lin_V = nn.Linear(c_in, d)
         self.lin_w = nn.Linear(d, 1)
 
-    def forward(self, x):
+    def compute_weights(self, x):
         key = self.lin_V(x)  # b, n, d
         weights = self.lin_w(torch.tanh(key))  # b, n, 1
+        weights = torch.softmax(weights, dim=1)
+        return weights
+
+    def forward(self, x):
+        weights = self.compute_weights(x)
         pooled = torch.matmul(x.transpose(1, 2), weights).squeeze(2)   # b, c, n x b, n, 1 => b, c, 1
         return pooled
 
