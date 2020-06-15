@@ -94,13 +94,15 @@ class LightModel(pl.LightningModule):
         tile_stats = pd.read_csv(ROOT_PATH +
                                  f'tilesstats_{self.hparams.tile_size}_{self.hparams.level}_{str(self.hparams.scale * 10)}_0.csv')
         self.trainsets = [TileDataset(self.train_path + '0/', self.df_train.iloc[self.train_idx], suffix='',
+                                      use_suspicious=False,
                                       target=target, return_stitched=return_stitched, rand=self.hparams.rand, tile_stats=tile_stats,
                                       num_tiles=self.hparams.n_tiles, transform=transforms_train)]
 
         tile_stats = pd.read_csv(ROOT_PATH +
                                  f'tilesstats_{self.hparams.tile_size}_{self.hparams.level}_{str(self.hparams.scale * 10)}_1.csv')
-        self.trainsets += [TileDataset(self.train_path + f'0/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
+        self.trainsets += [TileDataset(self.train_path + f'1/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
                                        target=target, return_stitched=return_stitched, rand=self.hparams.rand, tile_stats=tile_stats,
+                                       use_suspicious=False,
                                        num_tiles=self.hparams.n_tiles,
                                        transform=transforms_train) for i in range(1, 4)]
 
@@ -108,6 +110,7 @@ class LightModel(pl.LightningModule):
                                  f'tilesstats_{self.hparams.tile_size}_{self.hparams.level}_{str(self.hparams.scale * 10)}_2.csv')
         self.trainsets += [TileDataset(self.train_path + f'2/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
                                        target=target, return_stitched=return_stitched, rand=self.hparams.rand, tile_stats=tile_stats,
+                                       use_suspicious=False,
                                        num_tiles=self.hparams.n_tiles,
                                        transform=transforms_train) for i in range(16, 19)]
 
@@ -265,12 +268,12 @@ if __name__ == '__main__':
                'warmup_factor': 10,
                'step_size': 0.7,
 
-               'n_tiles': 36,
+               'n_tiles': 32,
                'level': 2,
                'scale': 1,
                'tile_size': 256,
                'num_workers': 8,
-               'batch_size': 8,
+               'batch_size': 7,
                'accumulate': 1,
                'epochs': 30,
                }
