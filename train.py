@@ -94,20 +94,20 @@ class LightModel(pl.LightningModule):
         tile_stats = pd.read_csv(ROOT_PATH +
                                  f'tilesstats_{self.hparams.tile_size}_{self.hparams.level}_{str(self.hparams.scale * 10)}_0.csv')
         self.trainsets = [TileDataset(self.train_path + '0/', self.df_train.iloc[self.train_idx], suffix='',
-                                      target=target, return_stitched=return_stitched, rand=False, tile_stats=tile_stats,
+                                      target=target, return_stitched=return_stitched, rand=self.hparams.rand, tile_stats=tile_stats,
                                       num_tiles=self.hparams.n_tiles, transform=transforms_train)]
 
         tile_stats = pd.read_csv(ROOT_PATH +
                                  f'tilesstats_{self.hparams.tile_size}_{self.hparams.level}_{str(self.hparams.scale * 10)}_1.csv')
         self.trainsets += [TileDataset(self.train_path + f'0/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
-                                       target=target, return_stitched=return_stitched, rand=False, tile_stats=tile_stats,
+                                       target=target, return_stitched=return_stitched, rand=self.hparams.rand, tile_stats=tile_stats,
                                        num_tiles=self.hparams.n_tiles,
                                        transform=transforms_train) for i in range(1, 4)]
 
         tile_stats = pd.read_csv(ROOT_PATH +
                                  f'tilesstats_{self.hparams.tile_size}_{self.hparams.level}_{str(self.hparams.scale * 10)}_2.csv')
         self.trainsets += [TileDataset(self.train_path + f'2/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
-                                       target=target, return_stitched=return_stitched, rand=False, tile_stats=tile_stats,
+                                       target=target, return_stitched=return_stitched, rand=self.hparams.rand, tile_stats=tile_stats,
                                        num_tiles=self.hparams.n_tiles,
                                        transform=transforms_train) for i in range(16, 19)]
 
@@ -256,6 +256,7 @@ if __name__ == '__main__':
     hparams = {'strategy': 'bag',
                'backbone': 'efficientnet-b0',
                'head': 'attention',
+               'rand': True,
                'cancer_only': False,
                'predict_gleason': False,
 
