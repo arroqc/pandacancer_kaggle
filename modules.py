@@ -109,3 +109,29 @@ class GeM(nn.Module):
     def __repr__(self):
         return self.__class__.__name__ + '(' + 'p=' + '{:.4f}'.format(self.p.data.tolist()[0]) + ', ' + \
                'eps=' + str(self.eps) + ')'
+
+
+class QWKLoss(nn.Module):
+
+    def __init__(self, n_class):
+        super().__init__()
+        self.n_class = n_class
+        grid = torch.repeat_interleave(torch.arange(0, n_class).reshape(n_class, 1), repeats=n_class, dim=1)
+        self.weights = ((grid - grid.T) ** 2) / float((n_class - 1) ** 2)
+
+    def forward(self, logits, y_true):
+        y_pred = logits.softmax(1)
+
+        weights = self.weights.to(logits.device)
+
+        nom = torch.matmul(y_true, weights)  # N, C * C, C = N, C
+        nom = nom * y_pred  # N, C * C, N = N, N
+        nom = nom.sum()
+
+        denom = y_pred.sum(0, keepdims=True)
+        n_hat = y_true.sum(0, keepdims=True) / y_true.shape[0]
+        denom = torch.matmul(n_hat.T, denom) * weights
+        denom = denom.sum()
+
+        # gradient descent minimizes therefore return 1 - kappa instead of kappa = 1 - nom/denom
+        return nom / denom

@@ -8,23 +8,42 @@ import torch
 class TileDataset(tdata.Dataset):
     def __init__(self, img_path, dataframe, num_tiles, suffix,
                  transform=None,
-                 one_hot=False,
-                 return_stitched=True):
+                 target='class',
+                 return_stitched=True,
+                 rand=False,
+                 tile_stats=None):
 
         self.suffix = suffix
         self.img_path = Path(img_path)
-        self.one_hot = one_hot
+        self.target = target
         self.df = dataframe
         self.num_tiles = num_tiles
         self.img_list = self.df['image_id'].values
         self.transform = transform
         self.return_stitched = return_stitched
 
+        if self.suffix != '' and tile_stats is not None:
+            tile_stats = tile_stats[tile_stats['filename'].str[-6:-4] == suffix]
+        if self.suffix == '' and tile_stats is not None:
+            tile_stats = tile_stats[tile_stats['filename'].str.len().isin([38, 39])]
+
+        self.tile_stats = tile_stats
+        self.rand = rand
+
     def __getitem__(self, idx):
         img_id = self.img_list[idx]
 
-        tiles_paths = [str(self.img_path/(img_id + '_' + str(i) + self.suffix + '.png'))
-                       for i in range(0, self.num_tiles)]
+        if self.rand:
+            subdf = self.tile_stats[self.tile_stats['image_id'] == img_id]
+            sample = subdf.sample(self.num_tiles,
+                                  weights=subdf['reverse_white_area'] + 1e-6, replace=False).sort_values(
+                                  by=['reverse_white_area'], ascending=False)
+            file_list = sample['filename'].values
+        else:
+            file_list = [img_id + '_' + str(i) + self.suffix + '.png' for i in range(0, self.num_tiles)]
+
+        tiles_paths = [str(self.img_path/fn) for fn in file_list]
+
         tiles = [np.array(Image.open(tile)) for tile in tiles_paths]
         metadata = self.df.iloc[idx]
 
@@ -34,7 +53,7 @@ class TileDataset(tdata.Dataset):
             images = self.make_bag(tiles)
 
         isup = metadata['isup_grade']
-        if self.one_hot:
+        if self.target == 'bin':
             if isup == 0:
                 isup = torch.tensor([0, 0, 0, 0, 0], dtype=torch.float32)
             elif isup == 1:
@@ -47,7 +66,21 @@ class TileDataset(tdata.Dataset):
                 isup = torch.tensor([1, 1, 1, 1, 0], dtype=torch.float32)
             elif isup == 5:
                 isup = torch.tensor([1, 1, 1, 1, 1], dtype=torch.float32)
-        else:
+
+        elif self.target == 'one_hot':
+            if isup == 0:
+                isup = torch.tensor([1, 0, 0, 0, 0, 0], dtype=torch.float32)
+            elif isup == 1:
+                isup = torch.tensor([0, 1, 0, 0, 0, 0], dtype=torch.float32)
+            elif isup == 2:
+                isup = torch.tensor([0, 0, 1, 0, 0, 0], dtype=torch.float32)
+            elif isup == 3:
+                isup = torch.tensor([0, 0, 0, 1, 0, 0], dtype=torch.float32)
+            elif isup == 4:
+                isup = torch.tensor([0, 0, 0, 0, 1, 0], dtype=torch.float32)
+            elif isup == 5:
+                isup = torch.tensor([0, 0, 0, 0, 0, 1], dtype=torch.float32)
+        elif self.target == 'class':
             isup = float(isup)
 
         return {'image': images, 'provider': metadata['data_provider'],
