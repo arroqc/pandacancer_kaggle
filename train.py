@@ -91,32 +91,40 @@ class LightModel(pl.LightningModule):
         elif self.hparams.loss == 'qwk':
             target = 'one_hot'
 
-        tile_stats = pd.read_csv(ROOT_PATH +
-                                 f'tilesstats_{self.hparams.tile_size}_{self.hparams.level}_{str(self.hparams.scale * 10)}_0.csv')
+        # tile_stats = pd.read_csv(ROOT_PATH +
+        #                          f'tilesstats_{self.hparams.tile_size}_{self.hparams.level}_{str(self.hparams.scale * 10)}_0.csv')
+
+        tile_stats = pd.read_csv('tile_stats_attention.csv')
+        print(f'attention_fold_{fold + 1}')
+        tile_stats['attention_fold'] = tile_stats[f'attention_fold_{fold+1}']
         self.trainsets = [TileDataset(self.train_path + '0/', self.df_train.iloc[self.train_idx], suffix='',
+                                      use_attention=True,
                                       use_suspicious=False,
                                       target=target, return_stitched=return_stitched, rand=self.hparams.rand, tile_stats=tile_stats,
                                       num_tiles=self.hparams.n_tiles, transform=transforms_train)]
 
-        tile_stats = pd.read_csv(ROOT_PATH +
-                                 f'tilesstats_{self.hparams.tile_size}_{self.hparams.level}_{str(self.hparams.scale * 10)}_1.csv')
-        self.trainsets += [TileDataset(self.train_path + f'1/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
-                                       target=target, return_stitched=return_stitched, rand=self.hparams.rand, tile_stats=tile_stats,
-                                       use_suspicious=False,
-                                       num_tiles=self.hparams.n_tiles,
-                                       transform=transforms_train) for i in range(1, 4)]
-
-        tile_stats = pd.read_csv(ROOT_PATH +
-                                 f'tilesstats_{self.hparams.tile_size}_{self.hparams.level}_{str(self.hparams.scale * 10)}_2.csv')
-        self.trainsets += [TileDataset(self.train_path + f'2/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
-                                       target=target, return_stitched=return_stitched, rand=self.hparams.rand, tile_stats=tile_stats,
-                                       use_suspicious=False,
-                                       num_tiles=self.hparams.n_tiles,
-                                       transform=transforms_train) for i in range(16, 19)]
-
         self.valset = TileDataset(self.train_path + '0/', self.df_train.iloc[self.val_idx], suffix='',
+                                  use_attention=True,
+                                  tile_stats=tile_stats,
                                   num_tiles=self.hparams.n_tiles, target=target, return_stitched=return_stitched,
                                   transform=transforms_val)
+
+        # tile_stats = pd.read_csv('tile_stats_attention_1.csv')
+        # self.trainsets += [TileDataset(self.train_path + f'1/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
+        #                                target=target, return_stitched=return_stitched, rand=self.hparams.rand, tile_stats=tile_stats,
+        #                                use_suspicious=False,
+        #                                use_attention = True,
+        #                                num_tiles=self.hparams.n_tiles,
+        #                                transform=transforms_train) for i in range(1, 4)]
+        #
+        # tile_stats = pd.read_csv(ROOT_PATH +
+        #                          f'tilesstats_{self.hparams.tile_size}_{self.hparams.level}_{str(self.hparams.scale * 10)}_2.csv')
+        # self.trainsets += [TileDataset(self.train_path + f'2/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
+        #                                target=target, return_stitched=return_stitched, rand=self.hparams.rand, tile_stats=tile_stats,
+        #                                use_attention = True,
+        #                                use_suspicious=False,
+        #                                num_tiles=self.hparams.n_tiles,
+        #                                transform=transforms_train) for i in range(16, 19)]
 
     def train_dataloader(self):
         rand_dataset = np.random.randint(0, len(self.trainsets))
@@ -154,19 +162,19 @@ class LightModel(pl.LightningModule):
         elif self.hparams.strategy == 'stitched':
             from contribs.warmup import GradualWarmupScheduler
             optimizer = torch.optim.Adam(self.model.parameters(), lr=self.hparams.init_lr)
-            scheduler_cosine = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, self.hparams.epochs - 1)
-            scheduler = GradualWarmupScheduler(optimizer, multiplier=self.hparams.warmup_factor, total_epoch=1,
-                                               after_scheduler=scheduler_cosine)
-
             # Lightning will call scheduler only when doing optim, so after accumulation !
-            # total_steps = self.hparams.epochs * len(self.trainsets[0])//self.hparams.batch_size//self.hparams.accumulate
-            # schedulers = [{'scheduler': torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=self.hparams.init_lr,
-            #                                                                 div_factor=self.hparams.warmup_factor,
-            #                                                                 total_steps=total_steps,
-            #                                                                 pct_start=1 / self.hparams.epochs),
-            #                'interval': 'step',
-            #                'frequency': 1
-            #                }]
+            total_steps = self.hparams.epochs * (len(self.trainsets[0])//self.hparams.batch_size//self.hparams.accumulate + 1)
+            scheduler = {'scheduler': torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=self.hparams.init_lr,
+                                                                            div_factor=self.hparams.warmup_factor,
+                                                                            total_steps=total_steps + 10,
+                                                                            pct_start=1 / self.hparams.epochs),
+                           'interval': 'step',
+                           'frequency': 1
+                           }
+
+            optimizer = Over9000(self.model.parameters(), lr=3e-4)
+            scheduler = FlatCosineAnnealingLR(optimizer, max_iter=self.hparams.epochs,
+                                              step_size=self.hparams.step_size)
 
         self.optimizer = optimizer
         return [optimizer], [scheduler]
@@ -256,10 +264,10 @@ if __name__ == '__main__':
     SEED = 2020
     PRECISION = 16
 
-    hparams = {'strategy': 'bag',
+    hparams = {'strategy': 'stitched',
                'backbone': 'efficientnet-b0',
-               'head': 'attention',
-               'rand': True,
+               'head': 'basic',
+               'rand': False,
                'cancer_only': False,
                'predict_gleason': False,
 
@@ -268,12 +276,12 @@ if __name__ == '__main__':
                'warmup_factor': 10,
                'step_size': 0.7,
 
-               'n_tiles': 32,
+               'n_tiles': 9,
                'level': 2,
                'scale': 1,
                'tile_size': 256,
+               'batch_size': 14,
                'num_workers': 8,
-               'batch_size': 7,
                'accumulate': 1,
                'epochs': 30,
                }
@@ -324,6 +332,10 @@ if __name__ == '__main__':
                              precision=PRECISION,
                              reload_dataloaders_every_epoch=True
                              )
+        # model.prepare_data()
+        # lr_finder = trainer.lr_find(model)
+        # fig = lr_finder.plot(suggest=True)
+        # fig.savefig('lr_plot.png')
         trainer.fit(model)
 
         # Fold predictions
@@ -351,4 +363,4 @@ if __name__ == '__main__':
 
 
         # Todo: One fold training
-        #break
+        break
