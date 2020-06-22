@@ -109,6 +109,33 @@ class LightModel(pl.LightningModule):
                                   num_tiles=self.hparams.n_tiles, target=target, return_stitched=return_stitched,
                                   transform=transforms_val)
 
+        tile_stats = pd.read_csv('tile_stats_attention_1.csv')
+        print(f'attention_fold_{fold + 1}')
+        tile_stats['attention_fold'] = tile_stats[f'attention_fold_{fold+1}']
+        self.trainsets += [TileDataset(self.train_path + '0/', self.df_train.iloc[self.train_idx], suffix='_1',
+                                       use_attention=True,
+                                       use_suspicious=False,
+                                       target=target, return_stitched=return_stitched, rand=self.hparams.rand, tile_stats=tile_stats,
+                                       num_tiles=self.hparams.n_tiles, transform=transforms_train)]
+        tile_stats = pd.read_csv('tile_stats_attention_2.csv')
+        print(f'attention_fold_{fold + 1}')
+        tile_stats['attention_fold'] = tile_stats[f'attention_fold_{fold + 1}']
+        self.trainsets += [TileDataset(self.train_path + '0/', self.df_train.iloc[self.train_idx], suffix='_2',
+                                       use_attention=True,
+                                       use_suspicious=False,
+                                       target=target, return_stitched=return_stitched, rand=self.hparams.rand,
+                                       tile_stats=tile_stats,
+                                       num_tiles=self.hparams.n_tiles, transform=transforms_train)]
+        tile_stats = pd.read_csv('tile_stats_attention_3.csv')
+        print(f'attention_fold_{fold + 1}')
+        tile_stats['attention_fold'] = tile_stats[f'attention_fold_{fold + 1}']
+        self.trainsets += [TileDataset(self.train_path + '0/', self.df_train.iloc[self.train_idx], suffix='_3',
+                                       use_attention=True,
+                                       use_suspicious=False,
+                                       target=target, return_stitched=return_stitched, rand=self.hparams.rand,
+                                       tile_stats=tile_stats,
+                                       num_tiles=self.hparams.n_tiles, transform=transforms_train)]
+
         # tile_stats = pd.read_csv('tile_stats_attention_1.csv')
         # self.trainsets += [TileDataset(self.train_path + f'1/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
         #                                target=target, return_stitched=return_stitched, rand=self.hparams.rand, tile_stats=tile_stats,
@@ -171,8 +198,8 @@ class LightModel(pl.LightningModule):
                            'interval': 'step',
                            'frequency': 1
                            }
-
-            optimizer = Over9000(self.model.parameters(), lr=3e-4)
+            #
+            optimizer = Ranger(self.model.parameters(), lr=3e-4)
             scheduler = FlatCosineAnnealingLR(optimizer, max_iter=self.hparams.epochs,
                                               step_size=self.hparams.step_size)
 
@@ -274,15 +301,15 @@ if __name__ == '__main__':
                'loss': 'bce',
                'init_lr': 3e-4,
                'warmup_factor': 10,
-               'step_size': 0.7,
+               'step_size': 0.2,
 
-               'n_tiles': 9,
+               'n_tiles': 36,
                'level': 2,
                'scale': 1,
                'tile_size': 256,
-               'batch_size': 14,
+               'batch_size': 4,
                'num_workers': 8,
-               'accumulate': 1,
+               'accumulate': 3,
                'epochs': 30,
                }
 

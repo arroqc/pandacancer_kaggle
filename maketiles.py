@@ -72,8 +72,8 @@ def rotate_image(mat, angle):
     rotation_mat = cv2.getRotationMatrix2D(image_center, angle, 1.)
 
     # rotation calculates the cos and sin, taking absolutes of those.
-    abs_cos = abs(rotation_mat[0,0])
-    abs_sin = abs(rotation_mat[0,1])
+    abs_cos = abs(rotation_mat[0, 0])
+    abs_sin = abs(rotation_mat[0, 1])
 
     # find the new width and height bounds
     bound_w = int(height * abs_sin + width * abs_cos)
@@ -129,8 +129,7 @@ def remove_pen_marks(img):
 
 def job(img_fn):
     img_id = img_fn.stem
-    col = skimage.io.MultiImage(str(img_fn))
-    image = col[-LEVEL]
+    image = (skimage.io.MultiImage(str(img_fn))[-LEVEL]).astype(np.uint8)
 
     if SCALE != 1.0:
         h, w, _ = image.shape
@@ -139,7 +138,6 @@ def job(img_fn):
 
     if img_id in pen_marked_images:
         image, _, _ = remove_pen_marks(image)
-
     tiles_stats = []
     image_stats = None
     if 0 in SETS:
@@ -239,10 +237,10 @@ pen_marked_images = [
 OUTPUT_IMG_PATH.mkdir(exist_ok=True, parents=True)
 df_train = pd.read_csv(CSV_PATH)
 
-img_list = list(TRAIN_PATH.glob('**/*.tiff'))
+img_list = list(TRAIN_PATH.glob('**/*.tiff'))[2100:]
 tile_maker = TileMaker(SIZE, NUM, SCALE)
 
-outputs = ProgressParallel(n_jobs=4, total=len(img_list))(delayed(job)(img_fn) for img_fn in img_list)
+outputs = ProgressParallel(n_jobs=2, total=len(img_list))(delayed(job)(img_fn) for img_fn in img_list)
 tiles_stats = [x['stats'] for x in outputs]
 big_list = []
 for small_list in tiles_stats:

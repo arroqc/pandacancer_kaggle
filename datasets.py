@@ -138,7 +138,7 @@ class TileDataset(tdata.Dataset):
     def __getitem__(self, idx):
         img_id = self.img_list[idx]
 
-        if self.rand:
+        if self.rand and not self.use_attention:
             subdf = self.tile_stats[self.tile_stats['image_id'] == img_id]
             sample = subdf.sample(self.num_tiles,
                                   weights=subdf['reverse_white_area'] + 1e-6, replace=False).sort_values(
@@ -147,7 +147,13 @@ class TileDataset(tdata.Dataset):
         elif self.use_attention:
             subdf = self.tile_stats[self.tile_stats['image_id'] == img_id].sort_values(by=f'attention_fold',
                                                                                        ascending=False)
-            file_list = subdf['filename'].values[:self.num_tiles]
+            if self.rand:
+                sample = subdf.sample(self.num_tiles,
+                                      weights=subdf['attention_fold'] + 1e-6, replace=False).sort_values(
+                    by=['reverse_white_area'], ascending=False)
+                file_list = sample['filename'].values
+            else:
+                file_list = subdf['filename'].values[:self.num_tiles]
         else:
             file_list = [img_id + '_' + str(i) + self.suffix + '.png' for i in range(0, self.num_tiles)]
 
