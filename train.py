@@ -91,67 +91,72 @@ class LightModel(pl.LightningModule):
         elif self.hparams.loss == 'qwk':
             target = 'one_hot'
 
-        # tile_stats = pd.read_csv(ROOT_PATH +
-        #                          f'tilesstats_{self.hparams.tile_size}_{self.hparams.level}_{str(self.hparams.scale * 10)}_0.csv')
-
         tile_stats = pd.read_csv('tile_stats_attention.csv')
         print(f'attention_fold_{fold + 1}')
         tile_stats['attention_fold'] = tile_stats[f'attention_fold_{fold+1}']
         self.trainsets = [TileDataset(self.train_path + '0/', self.df_train.iloc[self.train_idx], suffix='',
-                                      use_attention=True,
-                                      use_suspicious=False,
-                                      target=target, return_stitched=return_stitched, rand=self.hparams.rand, tile_stats=tile_stats,
+                                      use_attention=self.hparams.use_attention,
+                                      use_suspicious=self.hparams.use_suspicious,
+                                      target=target, return_stitched=return_stitched, rand=self.hparams.rand,
+                                      tile_stats=tile_stats,
                                       num_tiles=self.hparams.n_tiles, transform=transforms_train)]
 
         self.valset = TileDataset(self.train_path + '0/', self.df_train.iloc[self.val_idx], suffix='',
-                                  use_attention=True,
+                                  use_attention=self.hparams.use_attention,
                                   tile_stats=tile_stats,
                                   num_tiles=self.hparams.n_tiles, target=target, return_stitched=return_stitched,
                                   transform=transforms_val)
 
-        tile_stats = pd.read_csv('tile_stats_attention_1.csv')
-        print(f'attention_fold_{fold + 1}')
-        tile_stats['attention_fold'] = tile_stats[f'attention_fold_{fold+1}']
-        self.trainsets += [TileDataset(self.train_path + '0/', self.df_train.iloc[self.train_idx], suffix='_1',
-                                       use_attention=True,
-                                       use_suspicious=False,
-                                       target=target, return_stitched=return_stitched, rand=self.hparams.rand, tile_stats=tile_stats,
-                                       num_tiles=self.hparams.n_tiles, transform=transforms_train)]
-        tile_stats = pd.read_csv('tile_stats_attention_2.csv')
-        print(f'attention_fold_{fold + 1}')
-        tile_stats['attention_fold'] = tile_stats[f'attention_fold_{fold + 1}']
-        self.trainsets += [TileDataset(self.train_path + '0/', self.df_train.iloc[self.train_idx], suffix='_2',
-                                       use_attention=True,
-                                       use_suspicious=False,
-                                       target=target, return_stitched=return_stitched, rand=self.hparams.rand,
-                                       tile_stats=tile_stats,
-                                       num_tiles=self.hparams.n_tiles, transform=transforms_train)]
-        tile_stats = pd.read_csv('tile_stats_attention_3.csv')
-        print(f'attention_fold_{fold + 1}')
-        tile_stats['attention_fold'] = tile_stats[f'attention_fold_{fold + 1}']
-        self.trainsets += [TileDataset(self.train_path + '0/', self.df_train.iloc[self.train_idx], suffix='_3',
-                                       use_attention=True,
-                                       use_suspicious=False,
-                                       target=target, return_stitched=return_stitched, rand=self.hparams.rand,
-                                       tile_stats=tile_stats,
-                                       num_tiles=self.hparams.n_tiles, transform=transforms_train)]
+        if self.hparams.augmented_datasets:
+            tile_stats = pd.read_csv('tile_stats_attention_1.csv')
+            tile_stats['attention_fold'] = tile_stats[f'attention_fold_{fold+1}']
+            self.trainsets += [TileDataset(self.train_path + '0/', self.df_train.iloc[self.train_idx], suffix='_1',
+                                           use_attention=self.hparams.use_attention,
+                                           use_suspicious=self.hparams.use_suspicious,
+                                           target=target, return_stitched=return_stitched, rand=self.hparams.rand,
+                                           tile_stats=tile_stats,
+                                           num_tiles=self.hparams.n_tiles, transform=transforms_train)]
 
-        # tile_stats = pd.read_csv('tile_stats_attention_1.csv')
-        # self.trainsets += [TileDataset(self.train_path + f'1/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
-        #                                target=target, return_stitched=return_stitched, rand=self.hparams.rand, tile_stats=tile_stats,
-        #                                use_suspicious=False,
-        #                                use_attention = True,
-        #                                num_tiles=self.hparams.n_tiles,
-        #                                transform=transforms_train) for i in range(1, 4)]
-        #
-        # tile_stats = pd.read_csv(ROOT_PATH +
-        #                          f'tilesstats_{self.hparams.tile_size}_{self.hparams.level}_{str(self.hparams.scale * 10)}_2.csv')
-        # self.trainsets += [TileDataset(self.train_path + f'2/', self.df_train.iloc[self.train_idx], suffix=f'_{i}',
-        #                                target=target, return_stitched=return_stitched, rand=self.hparams.rand, tile_stats=tile_stats,
-        #                                use_attention = True,
-        #                                use_suspicious=False,
-        #                                num_tiles=self.hparams.n_tiles,
-        #                                transform=transforms_train) for i in range(16, 19)]
+            tile_stats = pd.read_csv('tile_stats_attention_2.csv')
+            tile_stats['attention_fold'] = tile_stats[f'attention_fold_{fold + 1}']
+            self.trainsets += [TileDataset(self.train_path + '0/', self.df_train.iloc[self.train_idx], suffix='_2',
+                                           use_attention=self.hparams.use_attention,
+                                           use_suspicious=self.hparams.use_suspicious,
+                                           target=target, return_stitched=return_stitched, rand=self.hparams.rand,
+                                           tile_stats=tile_stats,
+                                           num_tiles=self.hparams.n_tiles, transform=transforms_train)]
+            tile_stats = pd.read_csv('tile_stats_attention_3.csv')
+            tile_stats['attention_fold'] = tile_stats[f'attention_fold_{fold + 1}']
+            self.trainsets += [TileDataset(self.train_path + '0/', self.df_train.iloc[self.train_idx], suffix='_3',
+                                           use_attention=self.hparams.use_attention,
+                                           use_suspicious=self.hparams.use_suspicious,
+                                           target=target, return_stitched=return_stitched, rand=self.hparams.rand,
+                                           tile_stats=tile_stats,
+                                           num_tiles=self.hparams.n_tiles, transform=transforms_train)]
+
+            self.trainsets += [TileDataset(self.train_path + '2/', self.df_train.iloc[self.train_idx], suffix='_16',
+                                           use_attention=self.hparams.use_attention,
+                                           use_suspicious=self.hparams.use_suspicious,
+                                           target=target, return_stitched=return_stitched, rand=self.hparams.rand,
+                                           tile_stats=tile_stats,
+                                           num_tiles=self.hparams.n_tiles, transform=transforms_train)]
+
+            self.trainsets += [TileDataset(self.train_path + '2/', self.df_train.iloc[self.train_idx], suffix='_17',
+                                           use_attention=self.hparams.use_attention,
+                                           use_suspicious=self.hparams.use_suspicious,
+                                           target=target, return_stitched=return_stitched, rand=self.hparams.rand,
+                                           tile_stats=tile_stats,
+                                           num_tiles=self.hparams.n_tiles, transform=transforms_train)]
+
+            self.trainsets += [TileDataset(self.train_path + '2/', self.df_train.iloc[self.train_idx], suffix='_18',
+                                           use_attention=self.hparams.use_attention,
+                                           use_suspicious=self.hparams.use_suspicious,
+                                           target=target, return_stitched=return_stitched, rand=self.hparams.rand,
+                                           tile_stats=tile_stats,
+                                           num_tiles=self.hparams.n_tiles, transform=transforms_train)]
+
+
+
 
     def train_dataloader(self):
         rand_dataset = np.random.randint(0, len(self.trainsets))
@@ -199,9 +204,9 @@ class LightModel(pl.LightningModule):
                            'frequency': 1
                            }
             #
-            optimizer = Ranger(self.model.parameters(), lr=3e-4)
-            scheduler = FlatCosineAnnealingLR(optimizer, max_iter=self.hparams.epochs,
-                                              step_size=self.hparams.step_size)
+            # optimizer = Ranger(self.model.parameters(), lr=3e-4)
+            # scheduler = FlatCosineAnnealingLR(optimizer, max_iter=self.hparams.epochs,
+            #                                   step_size=self.hparams.step_size)
 
         self.optimizer = optimizer
         return [optimizer], [scheduler]
@@ -291,25 +296,31 @@ if __name__ == '__main__':
     SEED = 2020
     PRECISION = 16
 
-    hparams = {'strategy': 'stitched',
-               'backbone': 'efficientnet-b0',
-               'head': 'basic',
-               'rand': False,
+    hparams = {'backbone': 'efficientnet-b0',
+               'strategy': 'bag',
+               'head': 'attention',
+               'rand': True,
+               'augmented_datasets': True,  # If using attention need to also put 16 17 18 or remove !
+               'use_attention': False,
+               'use_suspicious': False,
                'cancer_only': False,
                'predict_gleason': False,
+
+               'n_tiles': 36,
+               'batch_size': 4,
+               'accumulate': 3,
 
                'loss': 'bce',
                'init_lr': 3e-4,
                'warmup_factor': 10,
                'step_size': 0.2,
 
-               'n_tiles': 36,
+
+
                'level': 2,
                'scale': 1,
                'tile_size': 256,
-               'batch_size': 4,
                'num_workers': 8,
-               'accumulate': 3,
                'epochs': 30,
                }
 
@@ -339,6 +350,13 @@ if __name__ == '__main__':
         val_idx = np.where(df_train['fold'] == i)[0]
         splits.append((train_idx, val_idx))
 
+    df_train = pd.read_csv('./train_clean.csv')
+    splits = []
+    for i in range(0, fold_n + 1):
+        train_idx = np.where(df_train[f'fold_{i+1}'] == 0)[0]
+        val_idx = np.where(df_train[f'fold_{i+1}'] == 1)[0]
+        splits.append((train_idx, val_idx))
+
     date = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
     for fold, (train_idx, val_idx) in enumerate(splits):
         print(f'Fold {fold + 1}')
@@ -347,7 +365,7 @@ if __name__ == '__main__':
                                                  version=f'fold_{fold + 1}')
 
         checkpoint_callback = pl.callbacks.ModelCheckpoint(filepath=tb_logger.log_dir + "/{epoch:02d}-{kappa:.4f}",
-                                                           monitor='kappa', mode='max')
+                                                           monitor='kappa', mode='max', save_top_k=3)
 
         model = LightModel(dict_to_args(hparams), df_train, train_idx, val_idx, TRAIN_PATH)
         trainer = pl.Trainer(gpus=[0], max_nb_epochs=hparams['epochs'], auto_lr_find=False,

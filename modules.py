@@ -32,13 +32,22 @@ class EfficientModel(nn.Module):
         self.feature_extractor = m
         self.n_tiles = n_tiles
         self.tile_size = tile_size
+
         if strategy == 'stitched':
-            self.head = nn.Linear(c_feature, c_out)
+            if head == 'basic':
+                self.head = nn.Linear(c_feature, c_out)
+            elif head == 'concat':
+                m._avg_pooling = AdaptiveConcatPool2d()
+                self.head = nn.Linear(c_feature * 2, c_out)
+            elif head == 'gem':
+                m._avg_pooling = GeM()
+                self.head = nn.Linear(c_feature, c_out)
         elif strategy == 'bag':
             if head == 'basic':
                 self.head = BasicHead(c_feature, c_out, n_tiles)
             elif head == 'attention':
                 self.head = AttentionHead(c_feature, c_out, n_tiles)
+
         self.strategy = strategy
 
     def forward(self, x):
