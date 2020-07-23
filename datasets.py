@@ -144,6 +144,7 @@ class TileDataset(tdata.Dataset):
                                   weights=subdf['reverse_white_area'] + 1e-6, replace=False).sort_values(
                                   by=['reverse_white_area'], ascending=False)
             file_list = sample['filename'].values
+
         elif self.use_attention:
             subdf = self.tile_stats[self.tile_stats['image_id'] == img_id].sort_values(by=f'attention_fold',
                                                                                        ascending=False)

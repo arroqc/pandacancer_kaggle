@@ -125,6 +125,7 @@ class LightModel(pl.LightningModule):
                                            target=target, return_stitched=return_stitched, rand=self.hparams.rand,
                                            tile_stats=tile_stats,
                                            num_tiles=self.hparams.n_tiles, transform=transforms_train)]
+
             tile_stats = pd.read_csv('tile_stats_attention_3.csv')
             tile_stats['attention_fold'] = tile_stats[f'attention_fold_{fold + 1}']
             self.trainsets += [TileDataset(self.train_path + '0/', self.df_train.iloc[self.train_idx], suffix='_3',
@@ -134,6 +135,8 @@ class LightModel(pl.LightningModule):
                                            tile_stats=tile_stats,
                                            num_tiles=self.hparams.n_tiles, transform=transforms_train)]
 
+            tile_stats = pd.read_csv('tile_stats_attention_16.csv')
+            tile_stats['attention_fold'] = tile_stats[f'attention_fold_{fold + 1}']
             self.trainsets += [TileDataset(self.train_path + '2/', self.df_train.iloc[self.train_idx], suffix='_16',
                                            use_attention=self.hparams.use_attention,
                                            use_suspicious=self.hparams.use_suspicious,
@@ -141,6 +144,8 @@ class LightModel(pl.LightningModule):
                                            tile_stats=tile_stats,
                                            num_tiles=self.hparams.n_tiles, transform=transforms_train)]
 
+            tile_stats = pd.read_csv('tile_stats_attention_17.csv')
+            tile_stats['attention_fold'] = tile_stats[f'attention_fold_{fold + 1}']
             self.trainsets += [TileDataset(self.train_path + '2/', self.df_train.iloc[self.train_idx], suffix='_17',
                                            use_attention=self.hparams.use_attention,
                                            use_suspicious=self.hparams.use_suspicious,
@@ -148,6 +153,8 @@ class LightModel(pl.LightningModule):
                                            tile_stats=tile_stats,
                                            num_tiles=self.hparams.n_tiles, transform=transforms_train)]
 
+            tile_stats = pd.read_csv('tile_stats_attention_18.csv')
+            tile_stats['attention_fold'] = tile_stats[f'attention_fold_{fold + 1}']
             self.trainsets += [TileDataset(self.train_path + '2/', self.df_train.iloc[self.train_idx], suffix='_18',
                                            use_attention=self.hparams.use_attention,
                                            use_suspicious=self.hparams.use_suspicious,
@@ -155,19 +162,16 @@ class LightModel(pl.LightningModule):
                                            tile_stats=tile_stats,
                                            num_tiles=self.hparams.n_tiles, transform=transforms_train)]
 
-
-
-
     def train_dataloader(self):
         rand_dataset = np.random.randint(0, len(self.trainsets))
         print('Using dataset', rand_dataset)
         train_dl = tdata.DataLoader(self.trainsets[rand_dataset], batch_size=self.hparams.batch_size, shuffle=True,
-                                    num_workers=self.hparams.num_workers)
+                                    num_workers=self.hparams.num_workers, drop_last=True)
         return train_dl
 
     def val_dataloader(self):
         val_dl = tdata.DataLoader(self.valset, batch_size=self.hparams.batch_size, shuffle=False,
-                                  num_workers=self.hparams.num_workers)
+                                  num_workers=self.hparams.num_workers, drop_last=True)
         return [val_dl]
 
     def cross_entropy_loss(self, logits, gt):
@@ -297,25 +301,25 @@ if __name__ == '__main__':
     PRECISION = 16
 
     hparams = {'backbone': 'efficientnet-b0',
-               'strategy': 'bag',
-               'head': 'attention',
-               'rand': True,
-               'augmented_datasets': True,  # If using attention need to also put 16 17 18 or remove !
-               'use_attention': False,
+               'strategy': 'stitched',
+               'head': 'basic',
+               'rand': False,
+
+               'augmented_datasets': False,  # If using attention need to also put 16 17 18 or remove !
+               'use_attention': True,
+
                'use_suspicious': False,
                'cancer_only': False,
                'predict_gleason': False,
 
-               'n_tiles': 36,
-               'batch_size': 4,
-               'accumulate': 3,
+               'n_tiles': 16,
+               'batch_size': 8,
+               'accumulate': 2,
 
                'loss': 'bce',
                'init_lr': 3e-4,
                'warmup_factor': 10,
                'step_size': 0.2,
-
-
 
                'level': 2,
                'scale': 1,
@@ -341,18 +345,18 @@ if __name__ == '__main__':
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
 
-    df_train = pd.read_csv(CSV_PATH)
-    df_train['gleason_score'] = np.where(df_train['gleason_score'] == 'negative', '0+0', df_train['gleason_score'])
-    fold_n = df_train['fold'].max()
-    splits = []
-    for i in range(0, fold_n + 1):
-        train_idx = np.where(df_train['fold'] != i)[0]
-        val_idx = np.where(df_train['fold'] == i)[0]
-        splits.append((train_idx, val_idx))
+    # df_train = pd.read_csv(CSV_PATH)
+    # df_train['gleason_score'] = np.where(df_train['gleason_score'] == 'negative', '0+0', df_train['gleason_score'])
+    # fold_n = df_train['fold'].max()
+    # splits = []
+    # for i in range(0, fold_n + 1):
+    #     train_idx = np.where(df_train['fold'] != i)[0]
+    #     val_idx = np.where(df_train['fold'] == i)[0]
+    #     splits.append((train_idx, val_idx))
 
     df_train = pd.read_csv('./train_clean.csv')
     splits = []
-    for i in range(0, fold_n + 1):
+    for i in range(0, 5):
         train_idx = np.where(df_train[f'fold_{i+1}'] == 0)[0]
         val_idx = np.where(df_train[f'fold_{i+1}'] == 1)[0]
         splits.append((train_idx, val_idx))
@@ -368,12 +372,12 @@ if __name__ == '__main__':
                                                            monitor='kappa', mode='max', save_top_k=3)
 
         model = LightModel(dict_to_args(hparams), df_train, train_idx, val_idx, TRAIN_PATH)
-        trainer = pl.Trainer(gpus=[0], max_nb_epochs=hparams['epochs'], auto_lr_find=False,
+        trainer = pl.Trainer(fast_dev_run=False, gpus=[0], max_epochs=hparams['epochs'], auto_lr_find=False,
                              gradient_clip_val=1,
                              logger=tb_logger,
                              accumulate_grad_batches=hparams['accumulate'],              # BatchNorm ?
                              checkpoint_callback=checkpoint_callback,
-                             nb_sanity_val_steps=0,
+                             num_sanity_val_steps=0,
                              precision=PRECISION,
                              reload_dataloaders_every_epoch=True
                              )
@@ -405,7 +409,6 @@ if __name__ == '__main__':
                      f'{OUTPUT_DIR}/{NAME}-{date}/fold{fold + 1}_preds.csv', index=False)
         with open(f'{OUTPUT_DIR}/{NAME}-{date}/hparams.pkl', 'wb') as file:
             pickle.dump(hparams, file)
-
 
         # Todo: One fold training
         break
