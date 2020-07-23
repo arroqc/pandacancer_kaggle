@@ -34,7 +34,6 @@ class EfficientModel(nn.Module):
         self.n_tiles = n_tiles
         self.tile_size = tile_size
 
-        self.feature_only = False
         if strategy == 'stitched':
             if head == 'basic':
                 self.head = nn.Sequential(nn.Linear(c_feature, 512),
@@ -48,11 +47,6 @@ class EfficientModel(nn.Module):
             elif head == 'gem':
                 m._avg_pooling = GeM()
                 self.head = nn.Linear(c_feature, c_out)
-            elif head == 'vlad':
-                self.feature_only = True
-                self.head = nn.Sequential(
-                                          NetVLAD(num_clusters=6, dim=c_feature),
-                                          nn.Linear(c_feature * 6, c_out))
 
         elif strategy == 'bag':
             if head == 'basic':
@@ -65,10 +59,7 @@ class EfficientModel(nn.Module):
     def forward(self, x):
         if self.strategy == 'bag':
             x = x.view(-1, 3, self.tile_size, self.tile_size)
-        if not self.feature_only:
-            h = self.feature_extractor(x)
-        else:
-            h = self.feature_extractor.extract_features(x)
+        h = self.feature_extractor.extract_features(x)
 
         h = self.head(h)
         return h
